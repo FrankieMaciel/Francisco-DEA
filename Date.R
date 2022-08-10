@@ -43,10 +43,9 @@ server <- function(input, output) {
     #print(input$header)
     #arquivo <- read.csv(input$idArquivo$datapath, header = input$header,sep = input$sep)
     for(nr in 1:length(input$idArquivo[, 1])){
-      name <- tools::file_path_sans_ext(input$idArquivo[[nr, 'name']])
       
       if(input$typDMU=="iperf"){
-        
+        name <- tools::file_path_sans_ext(input$idArquivo[[nr, 'name']])
         arquivo <- read.csv(input$idArquivo[[nr, 'datapath']], header = F, sep ="", skip = 6)
         df<-data.frame(arquivo[,8],arquivo[,7])
         colnames(df) <- c("Um", "Dois")
@@ -58,41 +57,51 @@ server <- function(input, output) {
         vetor <- as.numeric(as.character(df_vetor$DMU))
         
       } else{
+        name <- tools::file_path_sans_ext(input$idArquivo[[nr, 'name']])
         arquivo <- read.table(input$idArquivo[[nr, 'datapath']])
         vetor <- c(as.numeric(unlist(arquivo)))
         
       }
-
-    
-       media = mean(vetor, na.rm=FALSE)
-       hurst <- as.numeric(unlist(hurstexp(vetor)[1]))
-       dim <- as.numeric(unlist(fd.estimate(vetor, method=input$sep)[2]))
-       varianca <- as.numeric(unlist(var(vetor, na.rm=TRUE)[1]))
-     
-       #count <<- count + 1
-       foo[nrow(foo) + 1,] <<- c(name, dim, media, hurst, varianca)
       
+      if(input$typDMU=="tabela"){
+        arquivo <- read.xlsx(input$idArquivo[[nr, 'datapath']],  startRow = 1)
     
+        name <- as.character(arquivo[,2])
+        dim <- as.numeric(arquivo[,3])
+        media = as.numeric(arquivo[,4])
+        hurst <- as.numeric(arquivo[,5])
+        varianca <- as.numeric(arquivo[,6])
+        
+        list_1 <- list(DMU=name, FractalDim=dim, TCP_AVG =media, Hurst=hurst, Var=varianca)
+        foo <<- as.data.frame(list_1)
+
+      }else{
+        dim <- as.numeric(unlist(fd.estimate(vetor, method=input$sep)[2]))
+        media = mean(vetor, na.rm=FALSE)
+        hurst <- as.numeric(unlist(hurstexp(vetor)[1]))
+        varianca <- as.numeric(unlist(var(vetor, na.rm=TRUE)[1]))
+        
+        foo[nrow(foo) + 1,] <<- c(name, dim, media, hurst, varianca)
+      }
+
     }
     #tableDea <- read.xlsx()
     
- 
+
      Names=strsplit(as.character(foo[,1]),"_m") # COL names
      FractalDim=as.numeric(unlist(foo[,2])) #Fractal Dimension 
      TCP_AVG=as.numeric(unlist(foo[,3])) # Mean of TCP bandwidth between VMs on appraisal
      Hurst=as.numeric(unlist(foo[,4])) # Fractal Memory per timeseries
      Varianca=as.numeric(unlist(foo[,5])) # Variança
-     print(Varianca)
-     print(TCP_AVG)
-     
+
      dataMatrix=cbind(FractalDim,TCP_AVG,Hurst) # creates the data matrix
      rownames(dataMatrix)=Names # drop the no data rows in dataMatrix
      delete.na <- function(DF, n=0) {
        DF[rowSums(is.na(DF)) <= n,]
      }
      data_dea = delete.na(dataMatrix) #creates the data_dea table
-#     
-#     
+    
+   
      inputs = data_dea[,1] # select only input variables values
      outputs = data_dea[,c(2,3)] # select only output variables values, SLACK=TRUE
 # 
