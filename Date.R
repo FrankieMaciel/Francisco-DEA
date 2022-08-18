@@ -45,7 +45,11 @@ ui <- fluidPage(
       radioButtons('typDMU', 'Tipo de Arquivo:', list("DMU do APACHE BENCH" = "apache", "DMU do IPERF" = "iperf", "DMU Númerica" = "numerica", "Tabela" = "tabela"), selected = "apache" ),
       
       checkboxInput('header', 'Enviar tabela', TRUE),
-      radioButtons('sep', 'Metódos de Dimensão Fractal', list("Madogram" = "madogram", "Rodogram" = "rodogram", "Variogram" = "variogram","Variation" = "variation", "Periodogram" = "periodogram","Hallwood" = "hallwood" ), selected = "madogram" ),
+      selectInput("sep", "Metódos de Dimensão Fractal:",
+                  c("Madogram" = "madogram", "Variogram" = "variogram", "Rodogram" = "rodogram",
+                    "Variation" = "variation", "Incr1" = "incr1", "Boxcount" = "boxcount",
+                    "Hallwood" = "hallwood", "Periodogram" = "periodogram", "Wavelet" = "wavelet",
+                    "DctII" = "dctII", "Genton" = "genton")),
        ),
     mainPanel(
       actionButton("idBotao","Ler o arquivo"),
