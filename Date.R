@@ -42,7 +42,7 @@ ui <- fluidPage(
     sidebarPanel(
       fileInput('idArquivo', 'Selecione o seu arquivo', multiple = TRUE, accept = c('text/csv','text/comma-separated-values','text/tab-separated-values','.csv','.tsv')),
       tags$hr(),
-      radioButtons('typDMU', 'Tipo de Arquivo:', list("DMU do IPERF" = "iperf", "DMU Númerica" = "numerica", "Tabela" = "tabela"), selected = "iperf" ),
+      radioButtons('typDMU', 'Tipo de Arquivo:', list("DMU do APACHE BENCH" = "apache", "DMU do IPERF" = "iperf", "DMU Númerica" = "numerica", "Tabela" = "tabela"), selected = "apache" ),
       
       checkboxInput('header', 'Enviar tabela', TRUE),
       radioButtons('sep', 'Metódos de Dimensão Fractal', list("Madogram" = "madogram", "Rodogram" = "rodogram", "Variogram" = "variogram","Variation" = "variation", "Periodogram" = "periodogram","Hallwood" = "hallwood" ), selected = "madogram" ),
@@ -87,6 +87,12 @@ server <- function(input, output) {
         colnames(new_df2) <- c("EX", "DMU")
         df_vetor <- rbind(new_df, new_df2)
         vetor <- as.numeric(as.character(df_vetor$DMU))
+        
+      } else if(input$typDMU=="apache"){
+        
+        name <- tools::file_path_sans_ext(input$idArquivo[[nr, 'name']])
+        arquivo <- read.csv(input$idArquivo[[nr, 'datapath']], header = F, sep =",", skip = 1)
+        vetor <- c(as.numeric(unlist(arquivo[2])))
         
       } else{
         
