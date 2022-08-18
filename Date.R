@@ -4,10 +4,39 @@ library(fractaldim);
 library(xlsx);
 library(openxlsx);
 library(shinyjs);
-library(Benchmarking)
+library(Benchmarking);
+library(DT)
+
+
+js <- c(
+  "table.on('key', function(e, datatable, key, cell, originalEvent){",
+  "  var targetName = originalEvent.target.localName;",
+  "  if(key == 13 && targetName == 'body'){",
+  "    $(cell.node()).trigger('dblclick.dt');",
+  "  }",
+  "});",
+  "table.on('keydown', function(e){",
+  "  var keys = [9,13,37,38,39,40];",
+  "  if(e.target.localName == 'input' && keys.indexOf(e.keyCode) > -1){",
+  "    $(e.target).trigger('blur');",
+  "  }",
+  "});",
+  "table.on('key-focus', function(e, datatable, cell, originalEvent){",
+  "  var targetName = originalEvent.target.localName;",
+  "  var type = originalEvent.type;",
+  "  if(type == 'keydown' && targetName == 'input'){",
+  "    if([9,37,38,39,40].indexOf(originalEvent.keyCode) > -1){",
+  "      $(cell.node()).trigger('dblclick.dt');",
+  "    }",
+  "  }",
+  "});"
+)
+
 
 
 ui <- fluidPage(
+  useShinyjs(),  # Set up shinyjs
+  
   titlePanel("Francisco"),
   sidebarLayout(
     sidebarPanel(
@@ -20,7 +49,10 @@ ui <- fluidPage(
        ),
     mainPanel(
       actionButton("idBotao","Ler o arquivo"),
+      
       downloadButton("downloadTable", "Download"),
+      DTOutput("tbl"),
+      actionButton("idAtualizar","Atualizar"),
       tableOutput("outTableId"),
       tableOutput("OutDEA"),
       tableOutput("OutSupDEA"),
@@ -39,13 +71,13 @@ colnames(foo) <- c("DMU", "FractalDim", "TCP_AVG", "Hurst", "Var")
 # setting this option. Here we'll raise limit to 9MB.
 options(shiny.maxRequestSize = 9*1024^2)
 server <- function(input, output) {
+  
   observeEvent(input$idBotao, {
-    #print(input$header)
-    #arquivo <- read.csv(input$idArquivo$datapath, header = input$header,sep = input$sep)
     for(nr in 1:length(input$idArquivo[, 1])){
       
       if(input$typDMU=="iperf"){
         name <- tools::file_path_sans_ext(input$idArquivo[[nr, 'name']])
+
         arquivo <- read.csv(input$idArquivo[[nr, 'datapath']], header = F, sep ="", skip = 6)
         df<-data.frame(arquivo[,8],arquivo[,7])
         colnames(df) <- c("Um", "Dois")
@@ -57,6 +89,7 @@ server <- function(input, output) {
         vetor <- as.numeric(as.character(df_vetor$DMU))
         
       } else{
+        
         name <- tools::file_path_sans_ext(input$idArquivo[[nr, 'name']])
         arquivo <- read.table(input$idArquivo[[nr, 'datapath']])
         vetor <- c(as.numeric(unlist(arquivo)))
@@ -66,14 +99,25 @@ server <- function(input, output) {
       if(input$typDMU=="tabela"){
         arquivo <- read.xlsx(input$idArquivo[[nr, 'datapath']],  startRow = 1)
     
-        name <- as.character(arquivo[,2])
-        dim <- as.numeric(arquivo[,3])
-        media = as.numeric(arquivo[,4])
-        hurst <- as.numeric(arquivo[,5])
-        varianca <- as.numeric(arquivo[,6])
+        name <- arquivo[,1]
+        print(name)
+        dim <- as.numeric(arquivo[,2])
+        print(dim)
+        media <- as.numeric(arquivo[,3])
+        hurst <- as.numeric(arquivo[,4])
+        varianca <- as.numeric(arquivo[,5])
+        if(nrow(foo)>0){
+          list_1 <- list(DMU=name, FractalDim=dim, TCP_AVG =media, Hurst=hurst, Var=varianca)
+          foo2 <- as.data.frame(list_1)
+          foo <<- rbind(foo, foo2)
+          foo$DMU <<- as.character(foo$DMU)
+          
+        }else{
+          list_1 <- list(DMU=name, FractalDim=dim, TCP_AVG =media, Hurst=hurst, Var=varianca)
+          foo <<- as.data.frame(list_1)
+          foo$DMU <<- as.character(foo$DMU)
+        }
         
-        list_1 <- list(DMU=name, FractalDim=dim, TCP_AVG =media, Hurst=hurst, Var=varianca)
-        foo <<- as.data.frame(list_1)
 
       }else{
         dim <- as.numeric(unlist(fd.estimate(vetor, method=input$sep)[2]))
@@ -83,14 +127,18 @@ server <- function(input, output) {
         
         foo[nrow(foo) + 1,] <<- c(name, dim, media, hurst, varianca)
       }
+      
 
     }
     #tableDea <- read.xlsx()
     if(nrow(foo) > 1){
       print(nrow(foo))
     
-      Names=strsplit(as.character(foo[,1]),"_m") # COL names
+      Names=as.character(foo[,1]) # COL names
+      print(Names)
       FractalDim=as.numeric(unlist(foo[,2])) #Fractal Dimension 
+      print(FractalDim)
+      
       TCP_AVG=as.numeric(unlist(foo[,3])) # Mean of TCP bandwidth between VMs on appraisal
       Hurst=as.numeric(unlist(foo[,4])) # Fractal Memory per timeseries
       Varianca=as.numeric(unlist(foo[,5])) # Variança
@@ -107,10 +155,12 @@ server <- function(input, output) {
       outputs = data_dea[,c(2,3)] # select only output variables values, SLACK=TRUE
 # 
       CCR_I=dea(inputs, outputs,RTS="CRS",ORIENTATION="IN", SLACK=TRUE)
+      
+      CCR_O=dea(inputs,outputs,RTS="CRS",ORIENTATION="OUT", SLACK=TRUE) # runs output-oriented CCR DEA model
+      
 # 
       SCCR_I=sdea(inputs,outputs,RTS="CRS",ORIENTATION="IN") # runs super-efficiency input-oriented CCR DEA model
 #     
-      CCR_O=dea(inputs,outputs,RTS="CRS",ORIENTATION="OUT", SLACK=TRUE) # runs output-oriented CCR DEA model
 #     
       BCC_I=dea(inputs,outputs,RTS="VRS",ORIENTATION="IN", SLACK=TRUE) # runs input-oriente dBCC DEA model
 #     
@@ -143,18 +193,56 @@ server <- function(input, output) {
       output$OutSupDEA <- renderTable({tableSDEA})
      
     }
+    
     output$outTableId <- renderTable({foo})
-     
+    
+    
+    observeEvent(input$tbl_cell_edit, {
+      row  <- input$tbl_cell_edit$row
+      clmn <- input$tbl_cell_edit$col
+      print(foo[row, clmn])
+      print(input$tbl_cell_edit$value)
+      foo[row, clmn] <<- input$tbl_cell_edit$value
+        click("idAtualizar")
+    })
+    
+  
+    output$tbl = renderDT(
+      foo, editable = list(target = "cell", disable = list(columns =c(0,2:ncol(foo)))),
+      callback = JS(js),
+      extensions = "KeyTable",
+      options = list(
+        keys = TRUE
+      ))
+    
+
     output$downloadTable <- downloadHandler(
        filename = function() {
          "table.xlsx"
        },
        content = function(file) {
-         write.xlsx(foo, file, row.names = TRUE)
+         write.xlsx(foo, file, rowNames = FALSE)
        }
      )
   })
   
+  observeEvent(input$idAtualizar, {
+    output$tbl = renderDT(
+      foo, editable = list(target = "cell", disable = list(columns =c(0,2:ncol(foo)))),
+      callback = JS(js),
+      extensions = "KeyTable",
+      options = list(
+        keys = TRUE
+      ))
+    output$outTableId <- renderTable({foo})
+    
+    
+  })
+  
+  
+
+  
+
 }
 
 shinyApp(ui,server)
