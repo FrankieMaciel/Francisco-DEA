@@ -101,11 +101,19 @@ server <- function(input, output) {
     
         name <- arquivo[,1]
         print(name)
+        
         dim <- as.numeric(arquivo[,2])
-        print(dim)
+        dim <- format(round(dim, 2), nsmall = 2)
+        
         media <- as.numeric(arquivo[,3])
+        media <- format(round(media, 2), nsmall = 2)
+        
         hurst <- as.numeric(arquivo[,4])
+        hurst <- format(round(hurst, 2), nsmall = 2)
+        
         varianca <- as.numeric(arquivo[,5])
+        varianca <- format(round(varianca, 2), nsmall = 2)
+        
         if(nrow(foo)>0){
           list_1 <- list(DMU=name, FractalDim=dim, TCP_AVG =media, Hurst=hurst, Var=varianca)
           foo2 <- as.data.frame(list_1)
@@ -121,9 +129,18 @@ server <- function(input, output) {
 
       }else{
         dim <- as.numeric(unlist(fd.estimate(vetor, method=input$sep)[2]))
+        print(dim)
+        dim <- format(round(dim, 2), nsmall = 2) 
+        print(dim)
+        
         media = mean(vetor, na.rm=FALSE)
+        media <- format(round(media, 2), nsmall = 2) 
+        
         hurst <- as.numeric(unlist(hurstexp(vetor)[1]))
+        hurst <- format(round(hurst, 2), nsmall = 2) 
+        
         varianca <- as.numeric(unlist(var(vetor, na.rm=TRUE)[1]))
+        varianca <- format(round(varianca, 2), nsmall = 2) 
         
         foo[nrow(foo) + 1,] <<- c(name, dim, media, hurst, varianca)
       }
