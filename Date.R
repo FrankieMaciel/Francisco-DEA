@@ -56,7 +56,9 @@ ui <- fluidPage(
       tableOutput("outTableId"),
       tableOutput("OutDEA"),
       tableOutput("OutSupDEA"),
+      tags$h1("Fronteira de Eficiência"),
       plotOutput("graficoDea"),
+      tags$h1("Raio Ilimitado"),
       plotOutput("graficoDeafrontier")
       
 
