@@ -224,16 +224,16 @@ server <- function(input, output) {
         name <- arquivo[,1]
 
         dim <- as.numeric(arquivo[,2])
-        dim <- format(round(dim, 2), nsmall = 2)
+        dim <- format(round(dim, 3), nsmall = 3)
         
         media <- as.numeric(arquivo[,3])
-        media <- format(round(media, 2), nsmall = 2)
+        media <- format(round(media, 3), nsmall = 3)
         
         hurst <- as.numeric(arquivo[,4])
-        hurst <- format(round(hurst, 2), nsmall = 2)
+        hurst <- format(round(hurst, 3), nsmall = 3)
         
         varianca <- as.numeric(arquivo[,5])
-        varianca <- format(round(varianca, 2), nsmall = 2)
+        varianca <- format(round(varianca, 3), nsmall = 3)
         
         if(nrow(foo)>0){
           list_1 <- list(DMU=name, FractalDim=dim, TCP_AVG =media, Hurst=hurst, Var=varianca)
@@ -279,16 +279,16 @@ server <- function(input, output) {
       }
 
         dim <- as.numeric(unlist(fd.estimate(vetor, method=input$sep)[2]))
-        dim <- format(round(dim, 2), nsmall = 2) 
+        dim <- format(round(dim, 3), nsmall = 3) 
 
         media = mean(vetor, na.rm=FALSE)
-        media <- format(round(media, 2), nsmall = 2) 
+        media <- format(round(media, 3), nsmall = 3) 
 
         hurst <- as.numeric(unlist(hurstexp(vetor)[1]))
-        hurst <- format(round(hurst, 2), nsmall = 2) 
+        hurst <- format(round(hurst, 3), nsmall = 3) 
 
         varianca <- as.numeric(unlist(var(vetor, na.rm=TRUE)[1]))
-        varianca <- format(round(varianca, 2), nsmall = 2) 
+        varianca <- format(round(varianca, 3), nsmall = 3) 
         
         whittleEstimator <-  WhittleEst(vetor)
         #print(whittleEstimator)
