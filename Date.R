@@ -8,6 +8,8 @@ library(Benchmarking);
 library(shinydashboard);
 library(DT);
 library(TSA);
+library(longmemo);
+library(ptsuite)
 #library(TSstudio);
 
 ## JavaScript that dis/enables the ABILITY to click the tab (without changing aesthetics)
@@ -122,6 +124,21 @@ ui <- navbarPage(title = "FRANCISCO", id = "tabs",
                    collapsible = TRUE, width = 3,
                    textOutput("valueVar")
                  ),
+               box(
+                 title = "Whittle's Estimator", status = "primary", solidHeader = TRUE,
+                 collapsible = TRUE, width = 4,
+                 textOutput("valueWhittlesEstimator")
+               ),
+               box(
+                 title = "Alfa Tail Shape Parameter", status = "primary", solidHeader = TRUE,
+                 collapsible = TRUE, width = 4,
+                 textOutput("valueTailParameter")
+               ),
+               box(
+                 title = "Hill's Estimator", status = "primary", solidHeader = TRUE,
+                 collapsible = TRUE, width = 4,
+                 textOutput("valueHillsEstimator")
+               ),
 
              box(
                title = "Periodogram 1", status = "primary", solidHeader = TRUE,
@@ -186,8 +203,9 @@ ui <- navbarPage(title = "FRANCISCO", id = "tabs",
   
 )
 
-foo <<- data.frame(matrix(ncol = 5, nrow = 0))
-colnames(foo) <- c("DMU", "FractalDim", "TCP_AVG", "Hurst", "Var")
+foo <<- data.frame(matrix(ncol = 8, nrow = 0))
+colnames(foo) <- c("DMU", "FractalDim", "TCP_AVG", "Hurst", "Var", "Whittle's Estimator", 
+                   "Alfa Tail Shape Parameter", " Hill's Estimator")
 timeSeries <<- list()
 
 # By default, the file size limit is 5MB. It can be changed by
@@ -259,20 +277,40 @@ server <- function(input, output) {
         vetor <- c(as.numeric(unlist(arquivo)))
         
       }
-        
+
         dim <- as.numeric(unlist(fd.estimate(vetor, method=input$sep)[2]))
         dim <- format(round(dim, 2), nsmall = 2) 
 
         media = mean(vetor, na.rm=FALSE)
         media <- format(round(media, 2), nsmall = 2) 
-        
+
         hurst <- as.numeric(unlist(hurstexp(vetor)[1]))
         hurst <- format(round(hurst, 2), nsmall = 2) 
-        
+
         varianca <- as.numeric(unlist(var(vetor, na.rm=TRUE)[1]))
         varianca <- format(round(varianca, 2), nsmall = 2) 
         
-        foo[nrow(foo) + 1,] <<- c(name, dim, media, hurst, varianca)
+        whittleEstimator <-  WhittleEst(vetor)
+        #print(whittleEstimator)
+        whittleEstimator <-whittleEstimator$coefficients[[1,1]]
+        #print(whittleEstimator)
+        whittleEstimator <- format(round(whittleEstimator, 3), nsmall = 3) 
+        #print(whittleEstimator)
+        # o vetor não pode ter zeros
+        d <- vetor
+        d <- d[ d != 0]
+        tailParameter <- alpha_mle(d) 
+        tailParameter <- format(round(tailParameter$shape, 3), nsmall = 3) 
+        #print(tailParameter)
+        
+        #Warning in alpha_hills(d, length(d)) :
+        #Setting k as the number of observations makes it equivalent to the MLE (alpha_mle function).
+        hillsEstimator <- alpha_hills(d, length(d))
+        hillsEstimator <- format(round(hillsEstimator$shape, 3), nsmall = 3) 
+        
+        print(hillsEstimator)
+        
+        foo[nrow(foo) + 1,] <<- c(name, dim, media, hurst, varianca, whittleEstimator, tailParameter, hillsEstimator)
         timeSeries[length(timeSeries) + 1] <<- list(vetor)
 
       }
@@ -359,7 +397,6 @@ server <- function(input, output) {
       clmn <- input$tbl_cell_edit$col
       print(foo[row, clmn])
       print(input$tbl_cell_edit$value)
-      print("aqui1")
       foo[row, clmn] <<- input$tbl_cell_edit$value
         click("idAtualizar")
     })
@@ -383,6 +420,9 @@ server <- function(input, output) {
         output$valueTCP_AVG <- renderText(foo[row, 3])
         output$valueHurst <- renderText(foo[row, 4])
         output$valueVar <- renderText(foo[row, 5])
+        output$valueWhittlesEstimator <- renderText(foo[row, 6])
+        output$valueTailParameter <- renderText(foo[row, 7])
+        output$valueHillsEstimator  <- renderText(foo[row, 8])
         output$graficoDMUHistograma <- renderPlot(hist(timeSeries[[row]], col="darkblue", border="black"))
         output$graficoDMUPeriodograma <- renderPlot(periodogram(timeSeries[[row]]))
         output$graficoDMUPeriodogramaacf <- renderPlot(acf(timeSeries[[row]]))
