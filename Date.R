@@ -6,6 +6,7 @@ library(openxlsx);
 library(shinyjs);
 library(Benchmarking);
 library(shinydashboard);
+library(shinyalert);
 library(DT);
 library(TSA);
 library(longmemo);
@@ -58,6 +59,7 @@ ui <- navbarPage(title = "FRANCISCO", id = "tabs",
                     "Hallwood" = "hallwood", "Periodogram" = "periodogram", "Wavelet" = "wavelet",
                     "DctII" = "dctII", "Genton" = "genton")),
       actionButton("idBotao","Ler o arquivo"),
+      
       
        ),
     
@@ -207,16 +209,76 @@ foo <<- data.frame(matrix(ncol = 8, nrow = 0))
 colnames(foo) <- c("DMU", "FractalDim", "TCP_AVG", "Hurst", "Var", "Whittle's Estimator", 
                    "Alfa Tail Shape Parameter", " Hill's Estimator")
 timeSeries <<- list()
-
+global <<- reactiveValues(response = FALSE)
 # By default, the file size limit is 5MB. It can be changed by
 # setting this option. Here we'll raise limit to 9MB.
 options(shiny.maxRequestSize = 9*1024^2)
-server <- function(input, output) {
+server <- function(input, output, session) {
   hideTab(inputId = "tabs", target = "DMU Analysis")
   hideTab(inputId = "tabs", target = "DEA Table")
   hideTab(inputId = "tabs", target = "GRAPHIC DEA")
+
+
   
   observeEvent(input$idBotao, {
+    if(nrow(foo) >= 1){
+     # print("1")
+      shinyalert(title = "Deseja criar uma nova Tabela?",
+                 text = "Caso não, a tabela atual sofrerar o upgrade",
+                 type = "warning",
+                 closeOnClickOutside = TRUE,
+                 showCancelButton = TRUE,
+                 cancelButtonText = 'No',
+                 showConfirmButton = TRUE,
+                 confirmButtonText = 'Yes',
+                 confirmButtonCol = "darkred",
+                 timer = 15000, # 15 seconds
+                 callbackR = function(x) { 
+                   global$response <- x
+                   shinyalert(title = "Salvou", 
+                              #text = "Restart the application",
+                              type = "success")
+                 }
+      )
+    }
+
+      
+  observe({
+      req(input$shinyalert)
+    
+      if (!global$response == "FALSE" && input$shinyalert) {
+
+        fooDMU <- foo[nrow(foo),]
+        timeSeriesDMU <-  list(timeSeries[[length(timeSeries)]]) 
+        
+        rownames(fooDMU) <- seq_len(nrow(fooDMU))
+        foo <<- foo[-(1:nrow(foo)),]
+        foo <<- rbind(foo, fooDMU)
+        
+        timeSeries <<- timeSeries[-(1:length(timeSeries))]
+        timeSeries[length(timeSeries) + 1] <<- list(timeSeriesDMU[[1]])
+        hideTab(inputId = "tabs", target = "DMU Analysis")
+        
+        #timeSeries[1:length(timeSeries)] <- NULL
+        #timeSeries <<- timeSeriesDMU[[1]]
+        #timeSeries <<- c(timeSeries, timeSeriesDMU[[1]])
+        
+        click("idAtualizar")
+        
+        # Reset value
+        global$response <- "FALSE"
+      } # End of confirmation button if
+      else if(!global$response == "FALSE" && !input$shinyalert){
+        print("Upgrade table")
+        global$response <- "FALSE"
+        
+      }
+    
+  }) 
+  
+    
+
+   
     for(nr in 1:length(input$idArquivo[, 1])){
       if(input$typDMU=="tabela"){
         arquivo <- read.xlsx(input$idArquivo[[nr, 'datapath']],  startRow = 1)
@@ -308,11 +370,8 @@ server <- function(input, output) {
         hillsEstimator <- alpha_hills(d, length(d))
         hillsEstimator <- format(round(hillsEstimator$shape, 3), nsmall = 3) 
         
-        print(hillsEstimator)
-        
         foo[nrow(foo) + 1,] <<- c(name, dim, media, hurst, varianca, whittleEstimator, tailParameter, hillsEstimator)
         timeSeries[length(timeSeries) + 1] <<- list(vetor)
-
       }
       
 
@@ -320,6 +379,7 @@ server <- function(input, output) {
       
 
     }
+    
     #tableDea <- read.xlsx()
     if(nrow(foo) > 1){
 
@@ -407,6 +467,10 @@ server <- function(input, output) {
     observeEvent(input$tbl_rows_selected, {
       row  <- input$tbl_rows_selected
       print(row)
+      print(timeSeries)
+      
+      print(timeSeries[[row]])
+      
       print(length(timeSeries[[row]]))
 
 
@@ -471,11 +535,10 @@ server <- function(input, output) {
         keys = TRUE
       ), selection = 'single')
     
-
   })
   
   
-
+ 
   
 
 }
