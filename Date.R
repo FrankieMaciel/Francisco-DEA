@@ -73,9 +73,9 @@ ui <- navbarPage(title = "FRANCISCO", id = "tabs",
           selectInput('idOutputs','Select Outputs',choices=NULL, selected=NULL, multiple = TRUE),
           
           selectInput("mod", "Modelo:",
-                  c("CRS" = "CRS", "VRS" = "VRS","SCCR" = "CRS", "SBM" = "SBM" )),
+                  c("CRS" = "CRS", "VRS" = "VRS", "SCCR" = "SCCR", "SBM" = "ADD" ), selected = "CRS"),
       selectInput("ori", "Orientacoes:",
-                  c("IN" = "in", "OUT" = "out")),
+                  c("IN" = "in", "OUT" = "out"),  selected = "in"),
       actionButton("idDEA","Analyse DEA"),
       )
       
@@ -193,8 +193,14 @@ ui <- navbarPage(title = "FRANCISCO", id = "tabs",
              dashboardSidebar(disable = TRUE),
              dashboardBody(
                tags$h3("Table"),
-               tableOutput("OutDEA"),
-               tableOutput("OutSupDEA"),
+              
+               box(
+                 title = NULL, status = "info", solidHeader = TRUE,
+                 collapsible = FALSE, width = 4,
+                 
+                 tableOutput("OutDEA"),
+               ),
+ 
              )
                
              )
@@ -275,11 +281,19 @@ server <- function(input, output, session) {
           for(nr in 1:length(input$idArquivo[, 1])){
             arquivo <- read.xlsx(input$idArquivo[[nr, 'datapath']],  startRow = 1)
             nLinha <- nLinha + nrow(arquivo)
+            print("Total Linha")
+            
+            print(nLinha)
           }
             
           print("tabela new table")
+          
+          print("Tamanho da tabela")
+          print(nrow(fooTable))
 
           numeHouse <- nrow(fooTable) - nLinha + 1
+          print("linha que vão ficar")
+          
           print(numeHouse)
           
 
@@ -290,18 +304,23 @@ server <- function(input, output, session) {
         }
         
 
-        
+        print("erro aqui?")
         #fooTableDMU <<- fooTableDEA[numeHouse:nrow(fooTable),]
         
         fooTableDEA <<- fooTableDEA[numeHouse:nrow(fooTableDEA),]
         fooTable <<- fooTable[numeHouse:nrow(fooTable),]
         fooDash <<- fooDash[numeHouse:nrow(fooDash),]
         
-
+        
+        if(nrow(fooTableDEA) == 1){
+          hide("oculDEA")
+          hideTab(inputId = "tabs", target = "DEA Table")
+          hideTab(inputId = "tabs", target = "GRAPHIC DEA")
+        }
         rownames(fooTableDEA) <<- seq_len(nrow(fooTableDEA))
         rownames(fooTable) <<- seq_len(nrow(fooTable))
         rownames(fooDash) <<- seq_len(nrow(fooDash))
-        
+        if(!input$typDMU=="tabela"){
         if(is.null(input$variable)){
           fooTable <<- fooDash[,c("DMU", "FractalDim", "TCP_AVG", "Hurst", "Var", "Whittle's Estimator", 
                                   "Alfa Tail Shape Parameter")]
@@ -312,13 +331,14 @@ server <- function(input, output, session) {
           fooTableDEA <<- fooTable
           
         }
-          
+        }  
         
         
         print(fooTableDEA)
         print(fooTable)
         print("fooDash depois de pedir para excluir")
         print(fooDash)
+        print(fooTableDEA)
         
         timeSeries <<- timeSeries[numeHouse:length(timeSeries)]
 
@@ -387,10 +407,13 @@ server <- function(input, output, session) {
           #if(isTRUE(colnames(fooTable) == colnames(arquivo))){
            print(" Erro aqui, se o usário for add depois de uma nova de uma dmu")
             
-           # print(fooTable)
+           print(arquivo)
+           print(fooTable)
           print(fooDash)
 
           fooTable <<- rbind(fooTable[,colnames(arquivo)], arquivo)
+          print("Dobrando?")
+          
           print(fooTable)
           #mutate_if(is.numeric, round)
           fooTable[,2:ncol(fooTable)] <<- sapply(fooTable[2:ncol(fooTable)],as.numeric)
@@ -628,11 +651,11 @@ server <- function(input, output, session) {
       #NewDataframe <- merge.data.frame(fooTable2, fooTable, all.x=TRUE)
 
       updateSelectInput(session, "idInputs",
-                        choices = colnames(fooTableDEA), 
+                        choices = colnames(fooTableDEA[,2:ncol(fooTableDEA)]), 
       )
       
       updateSelectInput(session, "idOutputs",
-                        choices = colnames(fooTableDEA), 
+                        choices = colnames(fooTableDEA[,2:ncol(fooTableDEA)]), 
       )
       
       
@@ -658,23 +681,55 @@ server <- function(input, output, session) {
         
         data_dea = delete.na(dataMatrix) #creates the data_dea table
         
-        inputs = data_dea[,"FractalDim"] # select only input variables values
+        if(is.null(input$idInputs)){
+          inputs = data_dea[,"FractalDim"] # select only input variables values
+        }
+        else{
+          inputs = data_dea[,input$idInputs] # select only input variables values
+        }
+        
+        print("inputs")
         print(inputs)
-        outputs = data_dea[,c(2:ncol(data_dea))] # select only output variables values, SLACK=TRUE
+        
+        if(is.null(input$idOutputs)){
+          print(colnames(data_dea)[1])
+          
+          print(colnames(data_dea)[1] != "FractalDim")
+          if(colnames(data_dea)[1] != "FractalDim"){
+            col_idx <- grep("FractalDim", names(data_dea))
+            data_dea <- data_dea[, c(col_idx, (1:ncol(data_dea))[-col_idx])]
+            print(data_dea)
+            outputs = data_dea[,c(2:ncol(data_dea))] # select only output variables values, SLACK=TRUE
+          }else{
+            outputs = data_dea[,c(2:ncol(data_dea))] # select only output variables values, SLACK=TRUE
+          }
+          
+        }
+        else{
+          outputs = data_dea[,input$idInputs] # select only input variables values
+          
+        }
+        
+        print("outputs")
         print(outputs)
         
-        if(input$mod == "add" || input$mod == "SCRS" ){
-          dea=sdea(inputs,outputs,RTS="input$mod",ORIENTATION="input$or") # runs super-efficiency input-oriented CCR DEA model
-        
+        if(input$mod == "SCCR"){
+          dea <- sdea(inputs,outputs,RTS="CRS",ORIENTATION=input$ori) # runs super-efficiency input-oriented CCR DEA model
+          
           output$graficoDea <- renderPlot(dea.plot(inputs,outputs,RTS="CRS",ORIENTATION=input$ori))
           output$graficoDeafrontier <- renderPlot(dea.plot.frontier(inputs,outputs,RTS="CRS"))
+
+        }else if(input$mod == "ADD"){
+          dea <-sdea(inputs, outputs,RTS=input$mod,ORIENTATION=input$ori)
           
+          output$graficoDea <- renderPlot(dea.plot(inputs,outputs,RTS=input$mod,ORIENTATION="in-out"))
+          output$graficoDeafrontier <- renderPlot(dea.plot.frontier(inputs,outputs,RTS=input$mod))
           
         }else{
           dea <-dea(inputs, outputs,RTS=input$mod,ORIENTATION=input$ori, SLACK=TRUE)
+          
           output$graficoDea <- renderPlot(dea.plot(inputs,outputs,RTS=input$mod,ORIENTATION=input$ori))
           output$graficoDeafrontier <- renderPlot(dea.plot.frontier(inputs,outputs,RTS=input$mod))
-          
         }
         
 
@@ -691,8 +746,11 @@ server <- function(input, output, session) {
         
         #rownames(tableDea) <- 1:nrow(tableDea)
         #print(tableDea)
-        
-        colnames(tableDea) <- c("DMU","Efficiency Index")
+        if(input$mod == "SCCR" || input$mod == "ADD"){
+          colnames(tableDea) <- c("DMU","Efficiency Ranking Index")
+        }else{
+          colnames(tableDea) <- c("DMU","Efficiency Index")
+        }
         print(tableDea)
         
         rownames(tableDea) <- 1:nrow(tableDea)
@@ -707,7 +765,7 @@ server <- function(input, output, session) {
         #rownames(tableSDEA) <- 1:nrow(tableSDEA)
         #colnames(tableSDEA) <- c("DMU", "Efficiency Ranking Index")
         
-        output$OutDEA <<- renderTable(tableDea)
+        output$OutDEA <<- renderTable(tableDea, rownames=TRUE)
         #output$OutSupDEA <- renderTable({tableSDEA})
         
         
