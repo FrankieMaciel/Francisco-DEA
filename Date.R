@@ -10,7 +10,9 @@ library(shinyalert);
 library(DT);
 library(TSA);
 library(longmemo);
-library(ptsuite)
+library(ptsuite);
+library(plyr)
+
 #library(TSstudio);
 
 ## JavaScript that dis/enables the ABILITY to click the tab (without changing aesthetics)
@@ -50,18 +52,35 @@ ui <- navbarPage(title = "FRANCISCO", id = "tabs",
     sidebarPanel(
       fileInput('idArquivo', 'Selecione o seu arquivo', multiple = TRUE, accept = c('text/csv','text/comma-separated-values','text/tab-separated-values','.csv','.tsv')),
       tags$hr(),
-      radioButtons('typDMU', 'Tipo de Arquivo:', list("DMU do APACHE BENCH" = "apache", "DMU do IPERF" = "iperf", "DMU Númerica" = "numerica", "Tabela" = "tabela"), selected = "apache" ),
-      
-      checkboxInput('header', 'Enviar tabela', TRUE),
+      selectInput("typDMU", "Tipo de Arquivo:",
+                  c("DMU do APACHE BENCH" = "apache", "DMU do IPERF" = "iperf", "DMU Númerica" = "numerica", "Tabela" = "tabela"), selected = "apache"),
+      selectInput("variable", "Variable:",
+                  c("FractalDim" = "FractalDim",
+                    "TCP_AVG" = "TCP_AVG",
+                    "Hurst" = "Hurst",
+                    "Var" = "Var",
+                    "Whittle's Estimator" = "Whittle's Estimator",
+                    "Alfa Tail Shape Parameter" = "Alfa Tail Shape Parameter"),   multiple = TRUE),
+
       selectInput("sep", "Metódos de Dimensão Fractal:",
                   c("Madogram" = "madogram", "Variogram" = "variogram", "Rodogram" = "rodogram",
                     "Variation" = "variation", "Incr1" = "incr1", "Boxcount" = "boxcount",
                     "Hallwood" = "hallwood", "Periodogram" = "periodogram", "Wavelet" = "wavelet",
                     "DctII" = "dctII", "Genton" = "genton")),
       actionButton("idBotao","Ler o arquivo"),
+      div(id = "oculDEA",
+          selectInput('idInputs','Select Inputs',choices=NULL, selected=NULL, multiple = TRUE),
+          selectInput('idOutputs','Select Outputs',choices=NULL, selected=NULL, multiple = TRUE),
+          
+          selectInput("mod", "Modelo:",
+                  c("CRS" = "CRS", "VRS" = "VRS","SCCR" = "CRS", "SBM" = "SBM" )),
+      selectInput("ori", "Orientacoes:",
+                  c("IN" = "in", "OUT" = "out")),
+      actionButton("idDEA","Analyse DEA"),
+      )
       
       
-       ),
+       , width = 3),
     
     mainPanel(
       
@@ -136,12 +155,6 @@ ui <- navbarPage(title = "FRANCISCO", id = "tabs",
                  collapsible = TRUE, width = 4,
                  textOutput("valueTailParameter")
                ),
-               box(
-                 title = "Hill's Estimator", status = "primary", solidHeader = TRUE,
-                 collapsible = TRUE, width = 4,
-                 textOutput("valueHillsEstimator")
-               ),
-
              box(
                title = "Periodogram 1", status = "primary", solidHeader = TRUE,
                collapsible = TRUE, 
@@ -205,23 +218,31 @@ ui <- navbarPage(title = "FRANCISCO", id = "tabs",
   
 )
 
-foo <<- data.frame(matrix(ncol = 8, nrow = 0))
-colnames(foo) <- c("DMU", "FractalDim", "TCP_AVG", "Hurst", "Var", "Whittle's Estimator", 
-                   "Alfa Tail Shape Parameter", " Hill's Estimator")
+fooTable <<- data.frame(matrix(ncol = 7, nrow = 0))
+fooTableDEA <<- data.frame()
+fooDash <<- data.frame()
+colnames(fooTable) <- c("DMU", "FractalDim", "TCP_AVG", "Hurst", "Var", "Whittle's Estimator", 
+                   "Alfa Tail Shape Parameter")
 timeSeries <<- list()
 global <<- reactiveValues(response = FALSE)
 # By default, the file size limit is 5MB. It can be changed by
 # setting this option. Here we'll raise limit to 9MB.
 options(shiny.maxRequestSize = 9*1024^2)
 server <- function(input, output, session) {
+  hide("oculDEA")
   hideTab(inputId = "tabs", target = "DMU Analysis")
   hideTab(inputId = "tabs", target = "DEA Table")
   hideTab(inputId = "tabs", target = "GRAPHIC DEA")
+  
 
 
   
   observeEvent(input$idBotao, {
-    if(nrow(foo) >= 1){
+    
+
+
+    
+    if(nrow(fooTable) >= 1){
      # print("1")
       shinyalert(title = "Deseja criar uma nova Tabela?",
                  text = "Caso não, a tabela atual sofrerar o upgrade",
@@ -247,16 +268,69 @@ server <- function(input, output, session) {
       req(input$shinyalert)
     
       if (!global$response == "FALSE" && input$shinyalert) {
+        print("Aqui")
+        
+        if(input$typDMU=="tabela"){
+          nLinha <- 0
+          for(nr in 1:length(input$idArquivo[, 1])){
+            arquivo <- read.xlsx(input$idArquivo[[nr, 'datapath']],  startRow = 1)
+            nLinha <- nLinha + nrow(arquivo)
+          }
+            
+          print("tabela new table")
 
-        fooDMU <- foo[nrow(foo),]
-        timeSeriesDMU <-  list(timeSeries[[length(timeSeries)]]) 
+          numeHouse <- nrow(fooTable) - nLinha + 1
+          print(numeHouse)
+          
+
+        }else{
+          numeHouse <- nrow(fooTable) - length(input$idArquivo[, 1]) + 1
+          print(numeHouse)
+          
+        }
         
-        rownames(fooDMU) <- seq_len(nrow(fooDMU))
-        foo <<- foo[-(1:nrow(foo)),]
-        foo <<- rbind(foo, fooDMU)
+
         
-        timeSeries <<- timeSeries[-(1:length(timeSeries))]
-        timeSeries[length(timeSeries) + 1] <<- list(timeSeriesDMU[[1]])
+        #fooTableDMU <<- fooTableDEA[numeHouse:nrow(fooTable),]
+        
+        fooTableDEA <<- fooTableDEA[numeHouse:nrow(fooTableDEA),]
+        fooTable <<- fooTable[numeHouse:nrow(fooTable),]
+        fooDash <<- fooDash[numeHouse:nrow(fooDash),]
+        
+
+        rownames(fooTableDEA) <<- seq_len(nrow(fooTableDEA))
+        rownames(fooTable) <<- seq_len(nrow(fooTable))
+        rownames(fooDash) <<- seq_len(nrow(fooDash))
+        
+        if(is.null(input$variable)){
+          fooTable <<- fooDash[,c("DMU", "FractalDim", "TCP_AVG", "Hurst", "Var", "Whittle's Estimator", 
+                                  "Alfa Tail Shape Parameter")]
+          fooTableDEA <<- fooTable
+            
+        }else{
+          fooTable <<- fooDash[, c("DMU", input$variable)]
+          fooTableDEA <<- fooTable
+          
+        }
+          
+        
+        
+        print(fooTableDEA)
+        print(fooTable)
+        print("fooDash depois de pedir para excluir")
+        print(fooDash)
+        
+        timeSeries <<- timeSeries[numeHouse:length(timeSeries)]
+
+        #rownames(fooTableDMU) <- seq_len(nrow(fooTableDMU))
+        #fooTable <<- fooTable[-(1:nrow(fooTable)),]
+        #fooTableDEA <<- fooTableDEA[-(1:nrow(fooTableDEA)),]
+        
+        #fooTable <<- rbind(fooTable, fooTableDMU)
+        #fooTableDEA <<- rbind(fooTableDEA, fooTableDMU)
+        
+        #timeSeries <<- timeSeries[-(1:length(timeSeries))]
+        #timeSeries[length(timeSeries) + 1] <<- list(timeSeriesDMU[[1]])
         hideTab(inputId = "tabs", target = "DMU Analysis")
         
         #timeSeries[1:length(timeSeries)] <- NULL
@@ -268,11 +342,6 @@ server <- function(input, output, session) {
         # Reset value
         global$response <- "FALSE"
       } # End of confirmation button if
-      else if(!global$response == "FALSE" && !input$shinyalert){
-        print("Upgrade table")
-        global$response <- "FALSE"
-        
-      }
     
   }) 
   
@@ -282,35 +351,98 @@ server <- function(input, output, session) {
     for(nr in 1:length(input$idArquivo[, 1])){
       if(input$typDMU=="tabela"){
         arquivo <- read.xlsx(input$idArquivo[[nr, 'datapath']],  startRow = 1)
+        print("table")
+        #print(nrow(arquivo))
+        #print(colnames(arquivo))
+        #print(names(arquivo))
+        #print(input$variable)
         
-        name <- arquivo[,1]
+        #print(arquivo[,c("DMU", input$variable)])
+        
+        #name <- arquivo[,"DMU"]
+        #print(arquivo[,2])
+        
+        #dim <- as.numeric(arquivo[,2])
+        
+        #dim <- format(round(dim, 3), nsmall = 3)
+        
+        #media <- as.numeric(arquivo[,3])
+        #media <- format(round(media, 3), nsmall = 3)
+        #print(media)
+        
+        #print(typeof(media))
+        
+        #hurst <- as.numeric(arquivo[,4])
+        #hurst <- format(round(hurst, 3), nsmall = 3)
+        
+        #varianca <- as.numeric(arquivo[,5])
+        #varianca <- format(round(varianca, 3), nsmall = 3)
+        
+        if(nrow(fooTable)>0){
+          #list_1 <- list(DMU=name, FractalDim=dim, TCP_AVG =media, Hurst=hurst, Var=varianca)
+          #fooTable2 <- as.data.frame(list_1)
+          #print(isTRUE(all.equal(fooTable,arquivo)))
+          
+          #print(colnames(fooTable) ==  colnames(arquivo))
+          #if(isTRUE(colnames(fooTable) == colnames(arquivo))){
+           print(" Erro aqui, se o usário for add depois de uma nova de uma dmu")
+            
+           # print(fooTable)
+          print(fooDash)
 
-        dim <- as.numeric(arquivo[,2])
-        dim <- format(round(dim, 3), nsmall = 3)
-        
-        media <- as.numeric(arquivo[,3])
-        media <- format(round(media, 3), nsmall = 3)
-        
-        hurst <- as.numeric(arquivo[,4])
-        hurst <- format(round(hurst, 3), nsmall = 3)
-        
-        varianca <- as.numeric(arquivo[,5])
-        varianca <- format(round(varianca, 3), nsmall = 3)
-        
-        if(nrow(foo)>0){
-          list_1 <- list(DMU=name, FractalDim=dim, TCP_AVG =media, Hurst=hurst, Var=varianca)
-          foo2 <- as.data.frame(list_1)
-          foo <<- rbind(foo, foo2)
-          foo$DMU <<- as.character(foo$DMU)
+          fooTable <<- rbind(fooTable[,colnames(arquivo)], arquivo)
+          print(fooTable)
+          #mutate_if(is.numeric, round)
+          fooTable[,2:ncol(fooTable)] <<- sapply(fooTable[2:ncol(fooTable)],as.numeric)
+          
+          print(fooTable)
+          fooTable[,2:ncol(fooTable)] <<- format(round(fooTable[,2:ncol(fooTable)], 3), nsmall = 3)
+          
+          #fooTable <- apply(fooTable, 2, round, 3)
+          options(scipen = 999)
+          print(fooTable)
+          
+          str(fooTable)
+          
+          fooDash <<- fooTable
+          
+          #}
+          #else{
+            #print("Erro aqui")
+            
+          #}
+          
+          #fooTable$DMU <<- as.character(fooTable$DMU)
           
         }else{
-          list_1 <- list(DMU=name, FractalDim=dim, TCP_AVG =media, Hurst=hurst, Var=varianca)
-          foo <<- as.data.frame(list_1)
-          foo$DMU <<- as.character(foo$DMU)
+          #list_1 <- list(DMU=name, FractalDim=dim, TCP_AVG =media, Hurst=hurst, Var=varianca)
+          #fooTable <<- as.data.frame(arquivo[,c("DMU", input$variable)])
+
+          fooTable <<- arquivo
+          
+          #fooTable <<- rbind(fooTable, arquivo[,c("DMU", input$variable)])
+
+
+          #mutate_if(is.numeric, round)
+          fooTable[,2:ncol(fooTable)] <<- sapply(fooTable[2:ncol(fooTable)],as.numeric)
+
+
+          fooTable[,2:ncol(fooTable)] <<- format(round(fooTable[,2:ncol(fooTable)], 3), nsmall = 3)
+
+          #fooTable <- apply(fooTable, 2, round, 3)
+          
+          
+          print(fooTable)
+          
+          fooDash <<- fooTable
+          
+                    #print(typeof(fooTable$Hurst))
+          
+          #fooTable$DMU <<- as.character(fooTable$DMU)
         }
-        listTable <- vector(mode = "list", length = length(name))
+        listTable <- vector(mode = "list", length = nrow(arquivo))
         timeSeries <<- c(timeSeries, listTable)
-        
+        print(timeSeries)
 
       }else{
       if(input$typDMU=="iperf"){
@@ -367,11 +499,40 @@ server <- function(input, output, session) {
         
         #Warning in alpha_hills(d, length(d)) :
         #Setting k as the number of observations makes it equivalent to the MLE (alpha_mle function).
-        hillsEstimator <- alpha_hills(d, length(d))
-        hillsEstimator <- format(round(hillsEstimator$shape, 3), nsmall = 3) 
-        
-        foo[nrow(foo) + 1,] <<- c(name, dim, media, hurst, varianca, whittleEstimator, tailParameter, hillsEstimator)
+        #hillsEstimator <- alpha_hills(d, length(d))
+        #hillsEstimator <- format(round(hillsEstimator$shape, 3), nsmall = 3)
+
+        if(is.element("NULL", timeSeries)){
+          print(" Erro aqui, se a coluna for menor, se o usuário for add, em cima de xsl")
+          
+          print(fooTable)
+          
+          fooTableDMU <- data.frame(matrix(ncol = 7, nrow = 0))
+          fooDashDMU <- data.frame(matrix(ncol = 7, nrow = 0))
+          
+          colnames(fooTableDMU) <- c("DMU", "FractalDim", "TCP_AVG", "Hurst", "Var", "Whittle's Estimator", 
+                             "Alfa Tail Shape Parameter")
+          colnames(fooDashDMU) <- c("DMU", "FractalDim", "TCP_AVG", "Hurst", "Var", "Whittle's Estimator", 
+                                     "Alfa Tail Shape Parameter")
+          fooTableDMU[nrow(fooTableDMU) + 1,] <- c(name, dim, media, hurst, varianca, whittleEstimator, tailParameter)
+
+          fooTable <<- rbind(fooTable, fooTableDMU[,colnames(fooTable)])
+          
+          fooDashDMU[nrow(fooTable),] <- c(name, dim, media, hurst, varianca, whittleEstimator, tailParameter)
+          fooDash <<- fooDashDMU
+           print("fooDash")
+          
+          print(fooDash)
+
+          print(fooTable)
+        }else{
+          print(fooDash)
+          fooTable[nrow(fooTable) + 1,] <<- c(name, dim, media, hurst, varianca, whittleEstimator, tailParameter)
+          fooDash <<- fooTable
+          print(fooTable)
+          }
         timeSeries[length(timeSeries) + 1] <<- list(vetor)
+        
       }
       
 
@@ -379,85 +540,231 @@ server <- function(input, output, session) {
       
 
     }
+  
+  if(is.null(input$variable)){
+    if(input$typDMU=="tabela" || is.element("NULL", timeSeries)){
+      fooTableDEA <<- fooTable      
+    }else{
+      fooTableDEA <<- fooTable[,c("DMU", "FractalDim", "TCP_AVG", "Hurst", "Var", "Whittle's Estimator", 
+                        "Alfa Tail Shape Parameter")]
+    }
     
-    #tableDea <- read.xlsx()
-    if(nrow(foo) > 1){
 
+  }else{
+    if(is.element("NULL", timeSeries)){
       
-      Names=as.character(foo[,1]) # COL names
-      FractalDim=as.numeric(unlist(foo[,2])) #Fractal Dimension 
+      print("erro AQUi")
+      print(input$variable)    
+      print(colnames(fooTable[,2:ncol(fooTable)]))    
+      vetor <- c(colnames(fooTable[,2:ncol(fooTable)]) == input$variable)
+      print(vetor)
+      numeroTRUE <- sum(vetor, na.rm = TRUE)
+      print(numeroTRUE)
+      numeroVar <- length(input$variable)
+      print(numeroVar)
+      condTRUE <- numeroTRUE == numeroVar
+      print(condTRUE)
+      print(is.element("FALSE", vetor))
+      
+      print(!is.element("FALSE", vetor))
+      
 
-      TCP_AVG=as.numeric(unlist(foo[,3])) # Mean of TCP bandwidth between VMs on appraisal
-      Hurst=as.numeric(unlist(foo[,4])) # Fractal Memory per timeseries
-      Varianca=as.numeric(unlist(foo[,5])) # Variança
-
-      #dataMatrix=cbind(FractalDim,TCP_AVG,Hurst) # creates the data matrix
-      #dataMatrix <- foo[,2:ncol(foo)]
-      dataMatrix <- as.matrix(sapply(foo[,2:ncol(foo)], as.numeric))
-
-      rownames(dataMatrix)=Names # drop the no data rows in dataMatrix
-      delete.na <- function(DF, n=0) {
-         DF[rowSums(is.na(DF)) <= n,]
+      #print(ncol(fooTable[,2:ncol(fooTable)]) > length(input$variable))
+      #print(is.element(input$variable, fooTable[,2:ncol(fooTable)]))
+      if(!is.element("FALSE", vetor) || isTRUE(condTRUE)){
+        print("Aqui entra só XSL")
+        fooTableDEA <<- fooTable[,c("DMU", input$variable)]
+        print(fooTableDEA)
+        
+      }else{
+        print("oi")
+        shinyalert(title = "O limite maximo de colunas desta tabela é o numero de colunas da tabela adicionada ",
+                   text = "Caso queira mais colunas, tera que add DMU por DMU",
+                   type = "error",
+                   closeOnClickOutside = TRUE,
+                   showCancelButton = FALSE,
+                   cancelButtonText = 'No',
+                   showConfirmButton = TRUE,
+                   confirmButtonText = 'OK',
+                   confirmButtonCol = "darkred",
+                   timer = 15000, # 15 seconds
+        ) 
+        fooTableDEA <<- fooTable      
+        
+        
+        #timeSeries <<- timeSeries[1:length(timeSeries)-1]
+        #fooTableDEA <<- fooTable[1:nrow(fooTable)-1,]
+        
+        print(fooTable)
+        
+        print("eliminar o último fooTableDEA")
       }
       
+    }else{
+      print("aqui nesse else?")
+      fooTableDEA <<- fooTable[,c("DMU", input$variable)]
+      print(fooTableDEA)
+      
+    }
 
-      data_dea = delete.na(dataMatrix) #creates the data_dea table
+  }
+  
     
-   
-      inputs = data_dea[,1] # select only input variables values
-      outputs = data_dea[,c(2:ncol(data_dea))] # select only output variables values, SLACK=TRUE
+    #tableDea <- read.xlsx()
+    if(nrow(fooTableDEA) > 1){
 
-# 
-      CCR_I=dea(inputs, outputs,RTS="CRS",ORIENTATION="IN", SLACK=TRUE)
+      show("oculDEA")
       
-      CCR_O=dea(inputs,outputs,RTS="CRS",ORIENTATION="OUT", SLACK=TRUE) # runs output-oriented CCR DEA model
+      #Names=as.character(fooTable[,1]) # COL names
+      #FractalDim=as.numeric(unlist(fooTable[,2])) #Fractal Dimension 
+
+      #TCP_AVG=as.numeric(unlist(fooTable[,3])) # Mean of TCP bandwidth between VMs on appraisal
+      #Hurst=as.numeric(unlist(fooTable[,4])) # Fractal Memory per timeseries
+      #Varianca=as.numeric(unlist(fooTable[,5])) # Variança
+
+      #dataMatrix=cbind(FractalDim,TCP_AVG,Hurst) # creates the data matrix
+      #dataMatrix <- fooTable[,2:ncol(fooTable)]
+      #fooTable2 <<- rbind(fooTable2, fooTable)
+      #NewDataframe <- merge.data.frame(fooTable2, fooTable, all.x=TRUE)
+
+      updateSelectInput(session, "idInputs",
+                        choices = colnames(fooTableDEA), 
+      )
+      
+      updateSelectInput(session, "idOutputs",
+                        choices = colnames(fooTableDEA), 
+      )
+      
       
 # 
-      SCCR_I=sdea(inputs,outputs,RTS="CRS",ORIENTATION="IN") # runs super-efficiency input-oriented CCR DEA model
+      observeEvent(input$idDEA, {
+        print("DEA")
+        
+        print(fooTable)
+        
+        showTab(inputId = "tabs", target = "DEA Table")
+        showTab(inputId = "tabs", target = "GRAPHIC DEA")
+        
+        
+        dataMatrix <- as.matrix(sapply(fooTableDEA[,2:ncol(fooTableDEA)], as.numeric))
+        
+        rownames(dataMatrix)=fooTableDEA[,"DMU"] # drop the no data rows in dataMatrix
+        delete.na <- function(DF, n=0) {
+          DF[rowSums(is.na(DF)) <= n,]
+        }
+
+        
+        
+        
+        data_dea = delete.na(dataMatrix) #creates the data_dea table
+        
+        inputs = data_dea[,"FractalDim"] # select only input variables values
+        print(inputs)
+        outputs = data_dea[,c(2:ncol(data_dea))] # select only output variables values, SLACK=TRUE
+        print(outputs)
+        
+        if(input$mod == "add" || input$mod == "SCRS" ){
+          dea=sdea(inputs,outputs,RTS="input$mod",ORIENTATION="input$or") # runs super-efficiency input-oriented CCR DEA model
+        
+          output$graficoDea <- renderPlot(dea.plot(inputs,outputs,RTS="CRS",ORIENTATION=input$ori))
+          output$graficoDeafrontier <- renderPlot(dea.plot.frontier(inputs,outputs,RTS="CRS"))
+          
+          
+        }else{
+          dea <-dea(inputs, outputs,RTS=input$mod,ORIENTATION=input$ori, SLACK=TRUE)
+          output$graficoDea <- renderPlot(dea.plot(inputs,outputs,RTS=input$mod,ORIENTATION=input$ori))
+          output$graficoDeafrontier <- renderPlot(dea.plot.frontier(inputs,outputs,RTS=input$mod))
+          
+        }
+        
+
+        
+        #print(typeof(dea$eff))
+        listDEA <- data.matrix(dea$eff)
+        print(typeof(listDEA))
+        print(listDEA)
+        print(dea$eff)
+        tableDea <- data.frame(listDEA)
+        print(tableDea)
+        tableDea <- cbind(DMU = rownames(tableDea), tableDea)
+        print(tableDea)
+        
+        #rownames(tableDea) <- 1:nrow(tableDea)
+        #print(tableDea)
+        
+        colnames(tableDea) <- c("DMU","Efficiency Index")
+        print(tableDea)
+        
+        rownames(tableDea) <- 1:nrow(tableDea)
+        print(tableDea)
+        tableDea <- arrange(tableDea,desc(tableDea[,2]))
+        
+        #tableDea[,2] <- tableDea[,2]
+        #print(tableDea)
+        
+        #tableSDEA <- data.frame(sort(SCCR_I$eff, decreasing=TRUE))
+        #tableSDEA <- cbind(DMU = rownames(tableSDEA), tableSDEA)
+        #rownames(tableSDEA) <- 1:nrow(tableSDEA)
+        #colnames(tableSDEA) <- c("DMU", "Efficiency Ranking Index")
+        
+        output$OutDEA <<- renderTable(tableDea)
+        #output$OutSupDEA <- renderTable({tableSDEA})
+        
+        
+        
+      })
+        
+        
+      #CCR_I=dea(inputs, outputs,RTS="CRS",ORIENTATION="IN", SLACK=TRUE)
+      
+      #CCR_O=dea(inputs,outputs,RTS="CRS",ORIENTATION="OUT", SLACK=TRUE) # runs output-oriented CCR DEA model
+      
+# 
+      #SCCR_I=sdea(inputs,outputs,RTS="CRS",ORIENTATION="IN") # runs super-efficiency input-oriented CCR DEA model
 #     
 #     
-      BCC_I=dea(inputs,outputs,RTS="VRS",ORIENTATION="IN", SLACK=TRUE) # runs input-oriente dBCC DEA model
+      #BCC_I=dea(inputs,outputs,RTS="VRS",ORIENTATION="IN", SLACK=TRUE) # runs input-oriente dBCC DEA model
 #     
-      BCC_O=dea(inputs,outputs,RTS="VRS",ORIENTATION="OUT", SLACK=TRUE) # runs output-oriented BCC DEA model
+      #BCC_O=dea(inputs,outputs,RTS="VRS",ORIENTATION="OUT", SLACK=TRUE) # runs output-oriented BCC DEA model
 #     
      #results
-      data.frame(CCR_I$eff,CCR_I$slack,CCR_I$sx,CCR_I$sy); #exbhits respectively the efficiency score, if there are slacks, input slack, output shortage
-      data.frame(CCR_O$eff,CCR_O$slack,CCR_O$sx,CCR_O$sy); #exbhits respectively the efficiency score, if there are slacks, input slack, output shortage
-      data.frame(BCC_I$eff,BCC_I$slack,BCC_I$sx,BCC_I$sy); #exbhits respectively the efficiency score, if there are slacks, input slack, output shortage
-      data.frame(BCC_O$eff,BCC_O$slack,BCC_O$sx,BCC_O$sy); #exbhits respectively the efficiency  score, if there are slacks, input slack, output shortage
+      #data.frame(CCR_I$eff,CCR_I$slack,CCR_I$sx,CCR_I$sy); #exbhits respectively the efficiency score, if there are slacks, input slack, output shortage
+      #data.frame(CCR_O$eff,CCR_O$slack,CCR_O$sx,CCR_O$sy); #exbhits respectively the efficiency score, if there are slacks, input slack, output shortage
+      #data.frame(BCC_I$eff,BCC_I$slack,BCC_I$sx,BCC_I$sy); #exbhits respectively the efficiency score, if there are slacks, input slack, output shortage
+      #data.frame(BCC_O$eff,BCC_O$slack,BCC_O$sx,BCC_O$sy); #exbhits respectively the efficiency  score, if there are slacks, input slack, output shortage
 #     #print(data.frame(CCR_I$eff)); #exbhits only the efficiency score because this function does not shows the slacks.
 #     #print(data.frame(SCCR_I$eff)) #exbhits only the efficiency score because this function does not shows the slacks.
      #print(data.frame(sort(SCCR_I$eff, decreasing=TRUE)));
      
-     
-      output$graficoDea <- renderPlot(dea.plot(inputs,outputs,RTS="vrs",ORIENTATION="out"))
-      output$graficoDeafrontier <- renderPlot(dea.plot.frontier(inputs,outputs,RTS="CRS"))
+      
+      #output$graficoDea <- renderPlot(dea.plot(inputs,outputs,RTS="vrs",ORIENTATION="out"))
+      #output$graficoDeafrontier <- renderPlot(dea.plot.frontier(inputs,outputs,RTS="CRS"))
       
      
 
  
-      tableDea <- data.frame(sort(CCR_I$eff))
-      tableDea <- cbind(DMU = rownames(tableDea), tableDea)
-      rownames(tableDea) <- 1:nrow(tableDea)
-      colnames(tableDea) <- c("DMU", "Efficiency Index")
+      #tableDea <- data.frame(sort(CCR_I$eff))
+      #tableDea <- cbind(DMU = rownames(tableDea), tableDea)
+      #rownames(tableDea) <- 1:nrow(tableDea)
+      #colnames(tableDea) <- c("DMU", "Efficiency Index")
       
-      tableSDEA <- data.frame(sort(SCCR_I$eff, decreasing=TRUE))
-      tableSDEA <- cbind(DMU = rownames(tableSDEA), tableSDEA)
-      rownames(tableSDEA) <- 1:nrow(tableSDEA)
-      colnames(tableSDEA) <- c("DMU", "Efficiency Ranking Index")
+      #tableSDEA <- data.frame(sort(SCCR_I$eff, decreasing=TRUE))
+      #tableSDEA <- cbind(DMU = rownames(tableSDEA), tableSDEA)
+      #rownames(tableSDEA) <- 1:nrow(tableSDEA)
+      #colnames(tableSDEA) <- c("DMU", "Efficiency Ranking Index")
       
-      output$OutDEA <- renderTable({tableDea})
-      output$OutSupDEA <- renderTable({tableSDEA})
+      #output$OutDEA <- renderTable({tableDea})
+      #output$OutSupDEA <- renderTable({tableSDEA})
      
     }
-    
 
     observeEvent(input$tbl_cell_edit, {
       row  <- input$tbl_cell_edit$row
       clmn <- input$tbl_cell_edit$col
-      print(foo[row, clmn])
+      print(fooTableDEA[row, clmn])
       print(input$tbl_cell_edit$value)
-      foo[row, clmn] <<- input$tbl_cell_edit$value
+      fooTable[row, clmn] <<- input$tbl_cell_edit$value
+      fooTableDEA[row, clmn] <<- input$tbl_cell_edit$value
         click("idAtualizar")
     })
 
@@ -479,14 +786,13 @@ server <- function(input, output, session) {
         hide(id="semSerieTemporal")
         show(id="SerieTemporal")
         show(id="oi")
-        output$nameDMU <- renderText(foo[row, 1])
-        output$valueFractalDim <- renderText(foo[row, 2])
-        output$valueTCP_AVG <- renderText(foo[row, 3])
-        output$valueHurst <- renderText(foo[row, 4])
-        output$valueVar <- renderText(foo[row, 5])
-        output$valueWhittlesEstimator <- renderText(foo[row, 6])
-        output$valueTailParameter <- renderText(foo[row, 7])
-        output$valueHillsEstimator  <- renderText(foo[row, 8])
+        output$nameDMU <- renderText(fooDash[row, 1])
+        output$valueFractalDim <- renderText(fooDash[row, 2])
+        output$valueTCP_AVG <- renderText(fooDash[row, 3])
+        output$valueHurst <- renderText(fooDash[row, 4])
+        output$valueVar <- renderText(fooDash[row, 5])
+        output$valueWhittlesEstimator <- renderText(fooDash[row, 6])
+        output$valueTailParameter <- renderText(fooDash[row, 7])
         output$graficoDMUHistograma <- renderPlot(hist(timeSeries[[row]], col="darkblue", border="black"))
         output$graficoDMUPeriodograma <- renderPlot(periodogram(timeSeries[[row]]))
         output$graficoDMUPeriodogramaacf <- renderPlot(acf(timeSeries[[row]]))
@@ -508,7 +814,7 @@ server <- function(input, output, session) {
     
   
     output$tbl = renderDT(
-      foo, editable = list(target = "cell", disable = list(columns =c(0,2:ncol(foo)))),
+      fooTableDEA, editable = list(target = "cell", disable = list(columns =c(0,2:ncol(fooTableDEA)))),
       callback = JS(jsname),
       extensions = "KeyTable",
       options = list(
@@ -521,14 +827,14 @@ server <- function(input, output, session) {
          "table.xlsx"
        },
        content = function(file) {
-         write.xlsx(foo, file, rowNames = FALSE)
+         write.xlsx(fooTableDEA, file, rowNames = FALSE)
        }
      )
   })
   
   observeEvent(input$idAtualizar, {
     output$tbl = renderDT(
-      foo, editable = list(target = "cell", disable = list(columns =c(0,2:ncol(foo)))),
+      fooTableDEA, editable = list(target = "cell", disable = list(columns =c(0,2:ncol(fooTableDEA)))),
       callback = JS(jsname),
       extensions = "KeyTable",
       options = list(
