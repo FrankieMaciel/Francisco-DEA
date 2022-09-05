@@ -83,10 +83,12 @@ ui <- navbarPage(title = "FRANCISCO", id = "tabs",
        , width = 3),
     
     mainPanel(
-      
       DTOutput("tbl"),
-      downloadButton("downloadTable", "Download"),
       
+      div(id = "oculButton",
+          actionButton("idDeleteRows"," Delete Line"),
+          downloadButton("downloadTable", "Download"),
+      ),
       shinyjs::hidden(
         div(id = "conteudoOpcional",
         actionButton("idAtualizar","Atualizar"),
@@ -126,23 +128,23 @@ ui <- navbarPage(title = "FRANCISCO", id = "tabs",
                ),
                  box(
                    title = "Fractal Dimension", status = "primary", solidHeader = TRUE,
-                   collapsible = TRUE, width = 3,
+                   collapsible = TRUE, width = 4,
                    textOutput("valueFractalDim")
                  ),
                  box(
                    title = "TCP Average", status = "primary", solidHeader = TRUE,
-                   collapsible = TRUE, width = 3,
+                   collapsible = TRUE, width = 4,
                    textOutput("valueTCP_AVG")
                  ),
 
                  box(
                    title = "Hurst Parameter", status = "primary", solidHeader = TRUE,
-                   collapsible = TRUE, width = 3,
+                   collapsible = TRUE, width = 4,
                    textOutput("valueHurst")
                  ),
                  box(
                    title = "Variance", status = "primary", solidHeader = TRUE,
-                   collapsible = TRUE, width = 3,
+                   collapsible = TRUE, width = 4,
                    textOutput("valueVar")
                  ),
                box(
@@ -230,12 +232,14 @@ fooDash <<- data.frame()
 colnames(fooTable) <- c("DMU", "FractalDim", "TCP_AVG", "Hurst", "Var", "Whittle's Estimator", 
                    "Alfa Tail Shape Parameter")
 timeSeries <<- list()
+
 global <<- reactiveValues(response = FALSE)
 # By default, the file size limit is 5MB. It can be changed by
 # setting this option. Here we'll raise limit to 9MB.
 options(shiny.maxRequestSize = 9*1024^2)
 server <- function(input, output, session) {
   hide("oculDEA")
+  hide("oculButton")
   hideTab(inputId = "tabs", target = "DMU Analysis")
   hideTab(inputId = "tabs", target = "DEA Table")
   hideTab(inputId = "tabs", target = "GRAPHIC DEA")
@@ -244,7 +248,6 @@ server <- function(input, output, session) {
 
   
   observeEvent(input$idBotao, {
-    
 
 
     
@@ -550,6 +553,17 @@ server <- function(input, output, session) {
           print(fooTable)
         }else{
           print(fooDash)
+          print("AQUi new erro")
+          if(ncol(fooTable) < 7){
+            
+            fooTable <<- data.frame(matrix(ncol = 7, nrow = 0))
+            
+            colnames(fooTable) <<- c("DMU", "FractalDim", "TCP_AVG", "Hurst", "Var", "Whittle's Estimator", 
+                                     "Alfa Tail Shape Parameter")
+          }
+
+
+          
           fooTable[nrow(fooTable) + 1,] <<- c(name, dim, media, hurst, varianca, whittleEstimator, tailParameter)
           fooDash <<- fooTable
           print(fooTable)
@@ -815,7 +829,6 @@ server <- function(input, output, session) {
       #output$OutSupDEA <- renderTable({tableSDEA})
      
     }
-
     observeEvent(input$tbl_cell_edit, {
       row  <- input$tbl_cell_edit$row
       clmn <- input$tbl_cell_edit$col
@@ -830,6 +843,8 @@ server <- function(input, output, session) {
     
   
     observeEvent(input$tbl_rows_selected, {
+      print("aqui seleção")
+      
       row  <- input$tbl_rows_selected
       print(row)
       print(timeSeries)
@@ -869,6 +884,10 @@ server <- function(input, output, session) {
 
       }
     })
+    if(nrow(fooTable) > 0){
+      show("oculButton")
+      }
+    
     
   
     output$tbl = renderDT(
@@ -891,6 +910,20 @@ server <- function(input, output, session) {
   })
   
   observeEvent(input$idAtualizar, {
+    if(nrow(fooTable) < 1){
+      hide("oculButton")
+      #print(fooTable)
+      #colnames(fooTable) <<- NULL
+      #print(fooTable)
+      
+    }
+    if(nrow(fooTable) < 2){
+      hide("oculDEA")
+      hideTab(inputId = "tabs", target = "DEA Table")
+      hideTab(inputId = "tabs", target = "GRAPHIC DEA")
+      
+    }
+    
     output$tbl = renderDT(
       fooTableDEA, editable = list(target = "cell", disable = list(columns =c(0,2:ncol(fooTableDEA)))),
       callback = JS(jsname),
@@ -900,8 +933,49 @@ server <- function(input, output, session) {
       ), selection = 'single')
     
   })
-  
-  
+
+    observeEvent(input$idDeleteRows, {
+
+
+
+      if(!is.null(isolate(input$tbl_rows_selected))){
+        
+        row <- isolate(input$tbl_rows_selected)
+        print("Excluir entrou excluir")
+        fooTable <<- isolate(fooTable[-row,])
+        fooTableDEA <<- isolate(fooTableDEA[-row,])
+        fooDash<<- isolate(fooDash[-row,])
+        
+        rownames(fooTableDEA) <<- seq_len(nrow(fooTableDEA))
+        rownames(fooTable) <<- seq_len(nrow(fooTable))
+        rownames(fooDash) <<- seq_len(nrow(fooDash))
+        
+        timeSeries <<- timeSeries[-row]
+        print(timeSeries)
+        if(nrow(fooTable) > 1){
+          click("idDEA")
+          
+        }
+        click("idAtualizar")
+        
+      }else{
+        shinyalert(title = "Selecione a linha que deseja Excluir",
+                   #text = "Caso queira mais colunas, tera que add DMU por DMU",
+                   type = "error",
+                   closeOnClickOutside = TRUE,
+                   showCancelButton = FALSE,
+                   cancelButtonText = 'No',
+                   showConfirmButton = TRUE,
+                   confirmButtonText = 'OK',
+                   confirmButtonCol = "darkred",
+                   timer = 15000, # 15 seconds
+        ) 
+        
+        
+      }
+    }, ignoreInit = TRUE)
+    
+
  
   
 
