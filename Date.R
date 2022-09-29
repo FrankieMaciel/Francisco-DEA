@@ -1,7 +1,6 @@
 library(shiny);
 library(pracma);
 library(fractaldim);
-library(xlsx);
 library(openxlsx);
 library(shinyjs);
 library(Benchmarking);
@@ -50,11 +49,11 @@ ui <- navbarPage(title = "FRANCISCO", id = "tabs",
 
   sidebarLayout(
     sidebarPanel(
-      fileInput('idArquivo', 'Selecione o seu arquivo', multiple = TRUE, accept = c('text/csv','text/comma-separated-values','text/tab-separated-values','.csv','.tsv')),
+      fileInput('idArquivo', 'Selecione o seu arquivo', multiple = TRUE, accept = c('text/csv','text/comma-separated-values','text/tab-separated-values','.txt', '.xlsx', '.csv','.tsv')),
       tags$hr(),
       selectInput("typDMU", "Tipo de Arquivo:",
                   c("DMU do APACHE BENCH" = "apache", "DMU do IPERF" = "iperf", "DMU Númerica" = "numerica", "Tabela" = "tabela"), selected = "apache"),
-      selectInput("variable", "Variable:",
+      selectInput("variable", "Variaveis:",
                   c("FractalDim" = "FractalDim",
                     "TCP_AVG" = "TCP_AVG",
                     "Hurst" = "Hurst",
@@ -67,13 +66,13 @@ ui <- navbarPage(title = "FRANCISCO", id = "tabs",
                     "Variation" = "variation", "Incr1" = "incr1", "Boxcount" = "boxcount",
                     "Hallwood" = "hallwood", "Periodogram" = "periodogram", "Wavelet" = "wavelet",
                     "DctII" = "dctII", "Genton" = "genton")),
-      actionButton("idBotao","Ler o arquivo"),
+      actionButton("idBotao","Gerar Tabela"),
       div(id = "oculDEA",
-          selectInput('idInputs','Select Inputs',choices=NULL, selected=NULL, multiple = TRUE),
-          selectInput('idOutputs','Select Outputs',choices=NULL, selected=NULL, multiple = TRUE),
+          selectInput('idInputs','Selecione Inputs',choices=NULL, selected=NULL, multiple = TRUE),
+          selectInput('idOutputs','Selecione Outputs',choices=NULL, selected=NULL, multiple = TRUE),
           
           selectInput("mod", "Modelo:",
-                  c("CRS" = "CRS", "VRS" = "VRS", "SCCR" = "SCCR", "SBM" = "ADD" ), selected = "CRS"),
+                  c("CCR" = "CRS", "BCC" = "VRS", "SCCR" = "SCCR", "SBM" = "ADD" ), selected = "CRS"),
       selectInput("ori", "Orientacoes:",
                   c("IN" = "in", "OUT" = "out"),  selected = "in"),
       actionButton("idDEA","Analyse DEA"),
@@ -86,8 +85,8 @@ ui <- navbarPage(title = "FRANCISCO", id = "tabs",
       DTOutput("tbl"),
       
       div(id = "oculButton",
-          actionButton("idDeleteRows"," Delete Line"),
-          downloadButton("downloadTable", "Download"),
+          actionButton("idDeleteRows"," Delete Linha"),
+          downloadButton("downloadTable", "Baixar"),
       ),
       shinyjs::hidden(
         div(id = "conteudoOpcional",
@@ -249,12 +248,16 @@ server <- function(input, output, session) {
   
   observeEvent(input$idBotao, {
 
+if(is.null(input$idArquivo)){
+  print("Sem arquivo")
+  
+}else{
 
     
     if(nrow(fooTable) >= 1){
      # print("1")
       shinyalert(title = "Deseja criar uma nova Tabela?",
-                 text = "Caso não, a tabela atual sofrerar o upgrade",
+                 text = "Caso não, aumentaremos o numero de linhas da tabela atual",
                  type = "warning",
                  closeOnClickOutside = TRUE,
                  showCancelButton = TRUE,
@@ -282,11 +285,37 @@ server <- function(input, output, session) {
         if(input$typDMU=="tabela"){
           nLinha <- 0
           for(nr in 1:length(input$idArquivo[, 1])){
-            arquivo <- read.xlsx(input$idArquivo[[nr, 'datapath']],  startRow = 1)
+            arquivo <- NULL
+            tryCatch(
+              withCallingHandlers(
+                arquivo <- read.xlsx(input$idArquivo[[nr, 'datapath']],  startRow = 1),
+                message = function(m) {
+                  print("message")
+                  
+                  print(w$message, type = "message")
+                },
+                warning = function(w) {
+                  print("waring")
+                  
+                  print(w$message, type = "warning")
+                }
+              ),
+              error = function(e){ 
+                arquivo <- NULL
+                print(e$message, type = "error")
+                
+              }
+            )
+            print("table")
+            print(arquivo)
+            if(is.null(arquivo)){
+              print("erro")
+            }else{
             nLinha <- nLinha + nrow(arquivo)
             print("Total Linha")
             
             print(nLinha)
+            }
           }
             
           print("tabela new table")
@@ -373,8 +402,32 @@ server <- function(input, output, session) {
    
     for(nr in 1:length(input$idArquivo[, 1])){
       if(input$typDMU=="tabela"){
-        arquivo <- read.xlsx(input$idArquivo[[nr, 'datapath']],  startRow = 1)
+        arquivo <- NULL
+        tryCatch(
+          withCallingHandlers(
+            arquivo <- read.xlsx(input$idArquivo[[nr, 'datapath']],  startRow = 1),
+            message = function(m) {
+              print("message")
+              
+              print(w$message, type = "message")
+            },
+            warning = function(w) {
+              print("waring")
+              
+              print(w$message, type = "warning")
+            }
+          ),
+          error = function(e){ 
+            arquivo <- NULL
+            print(e$message, type = "error")
+            
+          }
+        )
         print("table")
+        print(arquivo)
+        if(is.null(arquivo)){
+          print("erro")
+        }else{
         #print(nrow(arquivo))
         #print(colnames(arquivo))
         #print(names(arquivo))
@@ -469,13 +522,40 @@ server <- function(input, output, session) {
         listTable <- vector(mode = "list", length = nrow(arquivo))
         timeSeries <<- c(timeSeries, listTable)
         print(timeSeries)
-
+        }
       }else{
       if(input$typDMU=="iperf"){
         name <- tools::file_path_sans_ext(input$idArquivo[[nr, 'name']])
 
         arquivo <- read.csv(input$idArquivo[[nr, 'datapath']], header = F, sep ="", skip = 6)
-        df<-data.frame(arquivo[,8],arquivo[,7])
+        df <- NULL
+        tryCatch(
+          withCallingHandlers(
+            df<-data.frame(arquivo[,8],arquivo[,7]),
+            message = function(m) {
+              print("message")
+              
+              print(w$message, type = "message")
+            },
+            warning = function(w) {
+              print("waring")
+              
+              print(w$message, type = "warning")
+            }
+          ),
+          error = function(e){ 
+            df <- NULL
+            print(e$message, type = "error")
+            
+          }
+        )
+        
+        if(is.null(df)){
+          vetor <- df
+        }else{
+          
+        print(df)
+        
         colnames(df) <- c("Um", "Dois")
         new_df=df[!grepl("K",df$Um),]
         new_df2=df[!grepl("K",df$Dois),]
@@ -483,20 +563,79 @@ server <- function(input, output, session) {
         colnames(new_df2) <- c("EX", "DMU")
         df_vetor <- rbind(new_df, new_df2)
         vetor <- as.numeric(as.character(df_vetor$DMU))
+        }
         
       } else if(input$typDMU=="apache"){
         
         name <- tools::file_path_sans_ext(input$idArquivo[[nr, 'name']])
+        print("Apache")
         arquivo <- read.csv(input$idArquivo[[nr, 'datapath']], header = F, sep =",", skip = 1)
-        vetor <- c(as.numeric(unlist(arquivo[2])))
+        print("Apache")
+        #shinyCatch(stop("error with blocking"), blocking_level = "error")
+        vetor <- NULL
+        tryCatch(
+          withCallingHandlers(
+            vetor <- c(as.numeric(unlist(arquivo[2]))),
+            message = function(m) {
+              print("message")
+              
+              print(w$message, type = "message")
+            },
+            warning = function(w) {
+              print("waring")
+              
+              print(w$message, type = "warning")
+              }
+          ),
+          error = function(e){ 
+            vetor <- NULL
+            print(e$message, type = "error")
+            
+          }
+        )
         
+
+      
+
+
       } else{
 
         name <- tools::file_path_sans_ext(input$idArquivo[[nr, 'name']])
-        arquivo <- read.table(input$idArquivo[[nr, 'datapath']])
-        vetor <- c(as.numeric(unlist(arquivo)))
+        
+        arquivo <- NULL
+        tryCatch(
+          withCallingHandlers(
+            arquivo <- read.table(input$idArquivo[[nr, 'datapath']]),
+            message = function(m) {
+              print("message")
+              
+              print(w$message, type = "message")
+            },
+            warning = function(w) {
+              print("waring")
+              
+              print(w$message, type = "warning")
+            }
+          ),
+          error = function(e){ 
+            arquivo <- NULL
+            print(e$message, type = "error")
+            
+          }
+        )
+        
+        print(arquivo)
+        if(is.null(arquivo)){
+          vetor <- NULL
+          }else{
+            vetor <- c(as.numeric(unlist(arquivo)))
+          }
         
       }
+        if(is.null(vetor)){
+          print("error")
+        }else{
+        
 
         dim <- as.numeric(unlist(fd.estimate(vetor, method=input$sep)[2]))
         dim <- format(round(dim, 3), nsmall = 3) 
@@ -571,7 +710,7 @@ server <- function(input, output, session) {
         timeSeries[length(timeSeries) + 1] <<- list(vetor)
         
       }
-      
+    }
 
       
       
@@ -716,11 +855,14 @@ server <- function(input, output, session) {
             outputs = data_dea[,c(2:ncol(data_dea))] # select only output variables values, SLACK=TRUE
           }else{
             outputs = data_dea[,c(2:ncol(data_dea))] # select only output variables values, SLACK=TRUE
-          }
+          print("is null, FractalDIM")
+            }
           
         }
         else{
-          outputs = data_dea[,input$idInputs] # select only input variables values
+          print("sem null, FractalDIM")
+          
+          outputs = data_dea[,input$idOutputs] # select only input variables values
           
         }
         
@@ -745,7 +887,8 @@ server <- function(input, output, session) {
           output$graficoDea <- renderPlot(dea.plot(inputs,outputs,RTS=input$mod,ORIENTATION=input$ori))
           output$graficoDeafrontier <- renderPlot(dea.plot.frontier(inputs,outputs,RTS=input$mod))
         }
-        
+        print(dea$eff)
+       
 
         
         #print(typeof(dea$eff))
@@ -763,6 +906,14 @@ server <- function(input, output, session) {
         if(input$mod == "SCCR" || input$mod == "ADD"){
           colnames(tableDea) <- c("DMU","Efficiency Ranking Index")
         }else{
+          print(tableDea)
+          
+          if(input$ori == "out"){
+            tableDea[1:nrow(tableDea),2] = 1/tableDea[1:nrow(tableDea),2]
+            print("tableDea")
+            
+            print(tableDea)
+          }
           colnames(tableDea) <- c("DMU","Efficiency Index")
         }
         print(tableDea)
@@ -836,6 +987,7 @@ server <- function(input, output, session) {
       print(input$tbl_cell_edit$value)
       fooTable[row, clmn] <<- input$tbl_cell_edit$value
       fooTableDEA[row, clmn] <<- input$tbl_cell_edit$value
+      fooDash[row, clmn] <<- input$tbl_cell_edit$value
         click("idAtualizar")
     })
 
@@ -907,6 +1059,7 @@ server <- function(input, output, session) {
          write.xlsx(fooTableDEA, file, rowNames = FALSE)
        }
      )
+  }
   })
   
   observeEvent(input$idAtualizar, {
