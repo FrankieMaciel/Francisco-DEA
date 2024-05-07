@@ -1,0 +1,44 @@
+This is ApacheBench, Version 2.3 <$Revision: 1528965 $>
+Copyright 1996 Adam Twiss, Zeus Technology Ltd, http://www.zeustech.net/
+Licensed to The Apache Software Foundation, http://www.apache.org/
+
+Benchmarking netlab.com (be patient)
+
+
+Server Software:        
+Server Hostname:        netlab.com
+Server Port:            443
+SSL/TLS Protocol:       TLSv1.2,ECDHE-RSA-AES128-GCM-SHA256,2048,128
+
+Document Path:          /
+Document Length:        707 bytes
+
+Concurrency Level:      1000
+Time taken for tests:   41.927 seconds
+Complete requests:      20000
+Failed requests:        0
+Non-2xx responses:      20000
+Total transferred:      18820000 bytes
+HTML transferred:       14140000 bytes
+Requests per second:    477.01 [#/sec] (mean)
+Time per request:       2096.372 [ms] (mean)
+Time per request:       2.096 [ms] (mean, across all concurrent requests)
+Transfer rate:          438.35 [Kbytes/sec] received
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:      611 1824 677.6   1777   16680
+Processing:   187  200  39.2    195     994
+Waiting:      187  200  31.2    195     769
+Total:        804 2025 679.3   1974   16878
+
+Percentage of the requests served within a certain time (ms)
+  50%   1974
+  66%   2051
+  75%   2098
+  80%   2163
+  90%   2727
+  95%   2959
+  98%   3079
+  99%   4357
+ 100%  16878 (longest request)
