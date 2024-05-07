@@ -276,10 +276,15 @@ server <- function(input, output, session) {
   hideTab(inputId = "tabs", target = "GRAPHIC DEA")
 
   # selecionar dataset
-  shinyDirChoose(input, "folder", roots=c(wd='.'), filetypes=c("", "txt"))
+  shinyDirChoose(input, "folder", roots=c(wd='.'), filetypes=c("", "txt", "csv"))
 
   observe({
-    print(input$folder)
+    chosen_folder <- reactive(input$folder)
+    req(is.list(input$folder))
+    datasetDir <- parseDirPath(c(wd = '.'), chosen_folder())
+    files_in_folder <- list.files(path = datasetDir, full.names = TRUE, recursive = TRUE,
+    pattern = "\\.(csv|txt)$")
+    print(files_in_folder)
   })
 
   observeEvent(input$idBotao, {
