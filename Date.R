@@ -15,6 +15,7 @@ library(ptsuite)
 library(plyr)
 library(shinyFiles)
 # library(TSstudio);
+library(tools)
 
 ## JavaScript that dis/enables the ABILITY to click the tab (without changing aesthetics)
 
@@ -229,25 +230,7 @@ ui <- navbarPage(
   tabPanel(
     "Ajuda",
     fluidPage(
-      markdown(
-        "**Bem-vindo à página de ajuda!**
-
-        Aqui você encontrará informações sobre como usar este aplicativo.
-
-        **Conteúdo:**
-
-        * [Introdução](URL Introducao)
-        * [Funcionalidades](URL Funcionalidades)
-        * [Perguntas frequentes](URL FAQ)
-        * [Contato](URL Contato)
-
-        **Navegação:**
-
-        * Use as abas acima para navegar pelas diferentes seções da página de ajuda.
-        * Clique nos links para acessar informações específicas.
-
-        **Esperamos que esta página seja útil!**"
-      )
+      includeMarkdown("ajuda.md")
     )
   ),
 )
@@ -262,6 +245,7 @@ colnames(fooTable) <- c(
 timeSeries <<- list()
 
 global <<- reactiveValues(response = FALSE)
+options(browser = 'firefox')
 
 # By default, the file size limit is 5MB. It can be changed by
 # setting this option. Here we'll raise limit to 9MB.
@@ -276,21 +260,32 @@ server <- function(input, output, session) {
   hideTab(inputId = "tabs", target = "GRAPHIC DEA")
 
   # selecionar dataset
-  shinyDirChoose(input, "folder", roots=c(wd='.'), filetypes=c("", "txt", "csv"))
+  shinyDirChoose(input, "folder", roots=c(wd='./datasets/'), filetypes=c("", "txt", "csv"))
+
+  arquivos <- reactiveVal(data.frame(datapath = character(), name = character(), stringsAsFactors = FALSE))
 
   observe({
     chosen_folder <- reactive(input$folder)
     req(is.list(input$folder))
-    datasetDir <- parseDirPath(c(wd = '.'), chosen_folder())
+    datasetDir <- parseDirPath(c(wd = './datasets/'), chosen_folder())
     files_in_folder <- list.files(path = datasetDir, full.names = TRUE, recursive = TRUE,
-    pattern = "\\.(csv|txt)$")
-    print(files_in_folder)
+    pattern = "\\.(csv)$")
+    # print(files_in_folder)
+    arquivos_df <- data.frame(
+      datapath = files_in_folder,
+      name = file_path_sans_ext(basename(files_in_folder)),
+      stringsAsFactors = FALSE
+    )
+    arquivos(arquivos_df)
   })
 
   observeEvent(input$idBotao, {
-    if (is.null(input$idArquivo)) {
+    arquivos_df <- arquivos()
+    if (is.null(arquivos_df)) {
       print("Sem arquivo")
+      print(arquivos_df)
     } else {
+      print(arquivos_df)
       if (nrow(fooTable) >= 1) {
         shinyalert(
           title = "Deseja criar uma nova Tabela?",
@@ -322,11 +317,11 @@ server <- function(input, output, session) {
 
           if (input$typDMU == "tabela") {
             nLinha <- 0
-            for (nr in 1:length(input$idArquivo[, 1])) {
+            for (nr in 1:length(arquivos_df[, 1])) {
               arquivo <- NULL
               tryCatch(
                 withCallingHandlers(
-                  arquivo <- read.xlsx(input$idArquivo[[nr, "datapath"]], startRow = 1),
+                  arquivo <- read.xlsx(arquivos_df[[nr, "datapath"]], startRow = 1),
                   message = function(m) {
                     print("message")
 
@@ -365,7 +360,7 @@ server <- function(input, output, session) {
 
             print(numeHouse)
           } else {
-            numeHouse <- nrow(fooTable) - length(input$idArquivo[, 1]) + 1
+            numeHouse <- nrow(fooTable) - length(arquivos_df[, 1]) + 1
             print(numeHouse)
           }
 
@@ -414,12 +409,12 @@ server <- function(input, output, session) {
           global$response <- "FALSE"
         } # End of confirmation button if
       })
-      for (nr in 1:length(input$idArquivo[, 1])) {
+      for (nr in 1:length(arquivos_df[, 1])) {
         if (input$typDMU == "tabela") {
           arquivo <- NULL
           tryCatch(
             withCallingHandlers(
-              arquivo <- read.xlsx(input$idArquivo[[nr, "datapath"]], startRow = 1),
+              arquivo <- read.xlsx(arquivos_df[[nr, "datapath"]], startRow = 1),
               message = function(m) {
                 print("message")
 
@@ -478,9 +473,9 @@ server <- function(input, output, session) {
           }
         } else {
           if (input$typDMU == "iperf") {
-            name <- tools::file_path_sans_ext(input$idArquivo[[nr, "name"]])
+            name <- tools::file_path_sans_ext(arquivos_df[[nr, "name"]])
 
-            arquivo <- read.csv(input$idArquivo[[nr, "datapath"]], header = F, sep = "", skip = 6)
+            arquivo <- read.csv(arquivos_df[[nr, "datapath"]], header = F, sep = "", skip = 6)
             df <- NULL
             tryCatch(
               withCallingHandlers(
@@ -516,9 +511,9 @@ server <- function(input, output, session) {
               vetor <- as.numeric(as.character(df_vetor$DMU))
             }
           } else if (input$typDMU == "apache") {
-            name <- tools::file_path_sans_ext(input$idArquivo[[nr, "name"]])
+            name <- tools::file_path_sans_ext(arquivos_df[[nr, "name"]])
             print("Apache")
-            arquivo <- read.csv(input$idArquivo[[nr, "datapath"]], header = F, sep = ",", skip = 1)
+            arquivo <- read.csv(arquivos_df[[nr, "datapath"]], header = F, sep = ",", skip = 1)
             print("Apache")
             vetor <- NULL
             tryCatch(
@@ -541,11 +536,11 @@ server <- function(input, output, session) {
               }
             )
           } else {
-            name <- tools::file_path_sans_ext(input$idArquivo[[nr, "name"]])
+            name <- tools::file_path_sans_ext(arquivos_df[[nr, "name"]])
             arquivo <- NULL
             tryCatch(
               withCallingHandlers(
-                arquivo <- read.table(input$idArquivo[[nr, "datapath"]]),
+                arquivo <- read.table(arquivos_df[[nr, "datapath"]]),
                 message = function(m) {
                   print("message")
 
