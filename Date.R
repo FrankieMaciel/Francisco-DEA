@@ -16,6 +16,8 @@ library(plyr)
 library(shinyFiles)
 # library(TSstudio);
 library(tools)
+library(htmltools)
+library(markdown)
 
 ## JavaScript that dis/enables the ABILITY to click the tab (without changing aesthetics)
 
@@ -110,6 +112,12 @@ ui <- navbarPage(
           )
         ),
       )
+    )
+  ),
+  tabPanel(
+    "Ajuda",
+    fluidPage(
+      includeMarkdown("./ajuda.md")
     )
   ),
   tabPanel(
@@ -227,12 +235,6 @@ ui <- navbarPage(
       )
     )
   ),
-  tabPanel(
-    "Ajuda",
-    fluidPage(
-      includeMarkdown("ajuda.md")
-    )
-  ),
 )
 
 fooTable <<- data.frame(matrix(ncol = 7, nrow = 0))
@@ -279,9 +281,17 @@ server <- function(input, output, session) {
     arquivos(arquivos_df)
   })
 
+  observeEvent(input$idArquivo, {
+    req(input$idArquivo)
+
+    arquivo_caminho <- input$idArquivo$datapath
+    arquivo_nome <- tools::file_path_sans_ext(basename(input$idArquivo$name))
+    arquivos(data.frame(datapath = arquivo_caminho, name = arquivo_nome, stringsAsFactors = FALSE))
+  })
+
   observeEvent(input$idBotao, {
     arquivos_df <- arquivos()
-    if (is.null(arquivos_df)) {
+    if (is.null(arquivos_df) | length(arquivos_df[, 1]) < 1) {
       print("Sem arquivo")
       print(arquivos_df)
     } else {
@@ -363,7 +373,6 @@ server <- function(input, output, session) {
             numeHouse <- nrow(fooTable) - length(arquivos_df[, 1]) + 1
             print(numeHouse)
           }
-
 
           print("erro aqui?")
           # fooTableDMU <<- fooTableDEA[numeHouse:nrow(fooTable),]
@@ -878,6 +887,9 @@ server <- function(input, output, session) {
         }
       )
     }
+
+    arquivos(data.frame(datapath = character(), name = character(), stringsAsFactors = FALSE))
+
   })
   observeEvent(input$idAtualizar, {
     if (nrow(fooTable) < 1) {
