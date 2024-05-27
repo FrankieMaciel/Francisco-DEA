@@ -295,7 +295,7 @@ server <- function(input, output, session) {
       print("Sem arquivo")
       print(arquivos_df)
     } else {
-      print(arquivos_df)
+      # print(arquivos_df)
       if (nrow(fooTable) >= 1) {
         shinyalert(
           title = "Deseja criar uma nova Tabela?",
@@ -307,7 +307,7 @@ server <- function(input, output, session) {
           showConfirmButton = TRUE,
           confirmButtonText = "Yes",
           confirmButtonCol = "darkred",
-          timer = 15000, # 15 seconds
+          timer = 0, # 15 seconds
           callbackR = function(x) {
             global$response <- x
             shinyalert(
@@ -321,7 +321,7 @@ server <- function(input, output, session) {
 
       observe({
         req(input$shinyalert)
-
+        arquivos_df <- arquivos()
         if (!global$response == "FALSE" && input$shinyalert) {
           print("Aqui")
 
@@ -370,8 +370,9 @@ server <- function(input, output, session) {
 
             print(numeHouse)
           } else {
+  
             numeHouse <- nrow(fooTable) - length(arquivos_df[, 1]) + 1
-            print(numeHouse)
+
           }
 
           print("erro aqui?")
@@ -402,11 +403,11 @@ server <- function(input, output, session) {
               fooTableDEA <<- fooTable
             }
           }
-          print(fooTableDEA)
-          print(fooTable)
+          # print(fooTableDEA)
+          # print(fooTable)
           print("fooDash depois de pedir para excluir")
-          print(fooDash)
-          print(fooTableDEA)
+          # print(fooDash)
+          # print(fooTableDEA)
 
           timeSeries <<- timeSeries[numeHouse:length(timeSeries)]
 
@@ -416,6 +417,8 @@ server <- function(input, output, session) {
 
           # Reset value
           global$response <- "FALSE"
+          arquivos(data.frame(datapath = character(), name = character(), stringsAsFactors = FALSE))
+          print(arquivos())
         } # End of confirmation button if
       })
       for (nr in 1:length(arquivos_df[, 1])) {
@@ -441,7 +444,7 @@ server <- function(input, output, session) {
             }
           )
           print("table")
-          print(arquivo)
+          # print(arquivo)
           if (is.null(arquivo)) {
             print("erro")
           } else {
@@ -453,18 +456,18 @@ server <- function(input, output, session) {
               print(fooDash)
 
               fooTable <<- rbind(fooTable[, colnames(arquivo)], arquivo)
-              print("Dobrando?")
+              # print("Dobrando?")
 
-              print(fooTable)
+              # print(fooTable)
               # mutate_if(is.numeric, round)
               fooTable[, 2:ncol(fooTable)] <<- sapply(fooTable[2:ncol(fooTable)], as.numeric)
 
-              print(fooTable)
+              # print(fooTable)
               fooTable[, 2:ncol(fooTable)] <<- format(round(fooTable[, 2:ncol(fooTable)], 3), nsmall = 3)
 
               # fooTable <- apply(fooTable, 2, round, 3)
               options(scipen = 999)
-              print(fooTable)
+              # print(fooTable)
 
               str(fooTable)
 
@@ -473,12 +476,12 @@ server <- function(input, output, session) {
               fooTable <<- arquivo
               fooTable[, 2:ncol(fooTable)] <<- sapply(fooTable[2:ncol(fooTable)], as.numeric)
               fooTable[, 2:ncol(fooTable)] <<- format(round(fooTable[, 2:ncol(fooTable)], 3), nsmall = 3)
-              print(fooTable)
+              # print(fooTable)
               fooDash <<- fooTable
             }
             listTable <- vector(mode = "list", length = nrow(arquivo))
             timeSeries <<- c(timeSeries, listTable)
-            print(timeSeries)
+            # print(timeSeries)
           }
         } else {
           if (input$typDMU == "iperf") {
@@ -509,7 +512,7 @@ server <- function(input, output, session) {
             if (is.null(df)) {
               vetor <- df
             } else {
-              print(df)
+              # print(df)
 
               colnames(df) <- c("Um", "Dois")
               new_df <- df[!grepl("K", df$Um), ]
@@ -521,9 +524,9 @@ server <- function(input, output, session) {
             }
           } else if (input$typDMU == "apache") {
             name <- tools::file_path_sans_ext(arquivos_df[[nr, "name"]])
-            print("Apache")
+            # print("Apache")
             arquivo <- read.csv(arquivos_df[[nr, "datapath"]], header = F, sep = ",", skip = 1)
-            print("Apache")
+            # print("Apache")
             vetor <- NULL
             tryCatch(
               withCallingHandlers(
@@ -583,7 +586,7 @@ server <- function(input, output, session) {
             media <- mean(vetor, na.rm = FALSE)
             media <- format(round(media, 3), nsmall = 3)
 
-            hurst <- as.numeric(unlist(hurstexp(vetor)[1]))
+            hurst <- as.numeric(unlist(hurstexp(vetor, display = FALSE)[1]))
             hurst <- format(round(hurst, 3), nsmall = 3)
 
             varianca <- as.numeric(unlist(var(vetor, na.rm = TRUE)[1]))
@@ -627,8 +630,8 @@ server <- function(input, output, session) {
 
               print(fooTable)
             } else {
-              print(fooDash)
-              print("AQUi new erro")
+              # print(fooDash)
+              # print("AQUi new erro")
               if (ncol(fooTable) < 7) {
                 fooTable <<- data.frame(matrix(ncol = 7, nrow = 0))
                 colnames(fooTable) <<- c(
@@ -639,7 +642,7 @@ server <- function(input, output, session) {
 
               fooTable[nrow(fooTable) + 1, ] <<- c(name, dim, media, hurst, varianca, whittleEstimator, tailParameter)
               fooDash <<- fooTable
-              print(fooTable)
+              # print(fooTable)
             }
             timeSeries[length(timeSeries) + 1] <<- list(vetor)
           }
@@ -887,9 +890,10 @@ server <- function(input, output, session) {
         }
       )
     }
-
-    arquivos(data.frame(datapath = character(), name = character(), stringsAsFactors = FALSE))
-
+    # Só limpa quando a variavel arquivos quando o evento de criar nova tabela não for usado
+    if (nrow(fooTable) == nrow(arquivos())) {
+      arquivos(data.frame(datapath = character(), name = character(), stringsAsFactors = FALSE))
+    }
   })
   observeEvent(input$idAtualizar, {
     if (nrow(fooTable) < 1) {
