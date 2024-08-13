@@ -519,6 +519,90 @@ checkAndProcessData <- function(filesDirsTable, inputType, choosenVariables, fra
   }
 }
 
+processDEA <- function(input, output) {
+  showTab(inputId = "tabs", target = "DEA Table")
+  showTab(inputId = "tabs", target = "GRAPHIC DEA")
+  combinedTableDea <- data.frame()
+  # seq_along(timeSeriesResultTable)
+  for (windowIndex in 1:length(timeSeriesResultTable)) {
+    resultTimeWindow <- timeSeriesResultTable[[windowIndex]]
+    resultTimeWindowDataFrame <- data.frame(matrix(unlist(resultTimeWindow), nrow = length(resultTimeWindow), byrow = TRUE))
+    colnames(resultTimeWindowDataFrame) <- tableColumnNames
+
+    if (input$typDMU != "tabela" && !is.null(input$variable)) {
+      FiltereSshowDataFrame <- resultTimeWindowDataFrame[, c("DMU", input$variable)]
+      resultTimeWindowDataFrame <- FiltereSshowDataFrame
+    }
+    dataMatrix <- as.matrix(sapply(resultTimeWindowDataFrame[, 2:ncol(resultTimeWindowDataFrame)], as.numeric))
+
+    rownames(dataMatrix) <- resultTimeWindowDataFrame[, "DMU"] # drop the no data rows in dataMatrix
+    delete.na <- function(DF, n = 0) {
+      DF[rowSums(is.na(DF)) <= n, ]
+    }
+
+    data_dea <- delete.na(dataMatrix) # creates the data_dea table
+
+    if (is.null(input$idInputs)) {
+      inputs <- data_dea[, "FractalDim"] # select only input variables values
+    } else {
+      inputs <- data_dea[, input$idInputs] # select only input variables values
+    }
+
+    if (is.null(input$idOutputs)) {
+      if (colnames(data_dea)[1] != "FractalDim") {
+        col_idx <- grep("FractalDim", names(data_dea))
+        data_dea <- data_dea[, c(col_idx, (seq_len(data_dea))[-col_idx])]
+        outputs <- data_dea[, c(2:ncol(data_dea))] # select only output variables values, SLACK=TRUE
+      } else {
+        outputs <- data_dea[, c(2:ncol(data_dea))] # select only output variables values, SLACK=TRUE
+      }
+    } else {
+      outputs <- data_dea[, input$idOutputs] # select only input variables values
+    }
+
+    if (input$mod == "SCCR") {
+      dea <- sdea(inputs, outputs, RTS = "CRS", ORIENTATION = input$ori) # runs super-efficiency input-oriented CCR DEA model
+
+      output$graficoDea <- renderPlot(dea.plot(inputs, outputs, RTS = "CRS", ORIENTATION = input$ori))
+      output$graficoDeafrontier <- renderPlot(dea.plot.frontier(inputs, outputs, RTS = "CRS"))
+    } else if (input$mod == "ADD") {
+      dea <- sdea(inputs, outputs, RTS = input$mod, ORIENTATION = input$ori)
+
+      output$graficoDea <- renderPlot(dea.plot(inputs, outputs, RTS = input$mod, ORIENTATION = "in-out"))
+      output$graficoDeafrontier <- renderPlot(dea.plot.frontier(inputs, outputs, RTS = input$mod))
+    } else {
+      dea <- dea(inputs, outputs, RTS = input$mod, ORIENTATION = input$ori, SLACK = TRUE)
+
+      output$graficoDea <- renderPlot(dea.plot(inputs, outputs, RTS = input$mod, ORIENTATION = input$ori))
+      output$graficoDeafrontier <- renderPlot(dea.plot.frontier(inputs, outputs, RTS = input$mod))
+    }
+
+    listDEA <- data.matrix(dea$eff)
+    tableDea <- data.frame(listDEA)
+    tableDea <- cbind(DMU = rownames(tableDea), tableDea)
+
+    if (input$mod == "SCCR" || input$mod == "ADD") {
+      colnames(tableDea) <- c("DMU", "Efficiency Ranking Index")
+    } else {
+      if (input$ori == "out") {
+        tableDea[seq_len(nrow(tableDea)), 2] <- 1 / tableDea[seq_len(nrow(tableDea)), 2]
+      }
+      colnames(tableDea) <- c("DMU", "Efficiency Index")
+    }
+
+    rownames(tableDea) <- seq_len(nrow(tableDea))
+    tableDea <- arrange(tableDea, desc(tableDea[, 2]))
+
+    if (nrow(combinedTableDea) < 1) {
+      combinedTableDea <- tableDea
+    } else {
+      combinedTableDea <- cbind(combinedTableDea, tableDea)
+    }
+  }
+
+  output$OutDEA <- renderTable(combinedTableDea, rownames = TRUE)
+}
+
 server <- function(input, output, session) {
   hide("oculDEA")
   hide("oculButton")
@@ -582,9 +666,9 @@ server <- function(input, output, session) {
     filesDirsTable(data.frame(datapath = arquivo_caminho, name = arquivo_nome, stringsAsFactors = FALSE))
   })
 
-  observeEvent(input$windowSize, {
-    # updateSliderInput(session, "windowIndex", max = input$windowSize)
-  })
+  # observeEvent(input$windowSize, {
+  #   # updateSliderInput(session, "windowIndex", max = input$windowSize)
+  # })
 
   observeEvent(input$idBotao, {
     hide("oculDEA")
@@ -732,71 +816,7 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$idDEA, {
-    showTab(inputId = "tabs", target = "DEA Table")
-    showTab(inputId = "tabs", target = "GRAPHIC DEA")
-
-
-    dataMatrix <- as.matrix(sapply(fooTableDEA[, 2:ncol(fooTableDEA)], as.numeric))
-
-    rownames(dataMatrix) <- fooTableDEA[, "DMU"] # drop the no data rows in dataMatrix
-    delete.na <- function(DF, n = 0) {
-      DF[rowSums(is.na(DF)) <= n, ]
-    }
-
-    data_dea <- delete.na(dataMatrix) # creates the data_dea table
-
-    if (is.null(input$idInputs)) {
-      inputs <- data_dea[, "FractalDim"] # select only input variables values
-    } else {
-      inputs <- data_dea[, input$idInputs] # select only input variables values
-    }
-
-    if (is.null(input$idOutputs)) {
-      if (colnames(data_dea)[1] != "FractalDim") {
-        col_idx <- grep("FractalDim", names(data_dea))
-        data_dea <- data_dea[, c(col_idx, (seq_len(data_dea))[-col_idx])]
-        outputs <- data_dea[, c(2:ncol(data_dea))] # select only output variables values, SLACK=TRUE
-      } else {
-        outputs <- data_dea[, c(2:ncol(data_dea))] # select only output variables values, SLACK=TRUE
-      }
-    } else {
-      outputs <- data_dea[, input$idOutputs] # select only input variables values
-    }
-
-    if (input$mod == "SCCR") {
-      dea <- sdea(inputs, outputs, RTS = "CRS", ORIENTATION = input$ori) # runs super-efficiency input-oriented CCR DEA model
-
-      output$graficoDea <- renderPlot(dea.plot(inputs, outputs, RTS = "CRS", ORIENTATION = input$ori))
-      output$graficoDeafrontier <- renderPlot(dea.plot.frontier(inputs, outputs, RTS = "CRS"))
-    } else if (input$mod == "ADD") {
-      dea <- sdea(inputs, outputs, RTS = input$mod, ORIENTATION = input$ori)
-
-      output$graficoDea <- renderPlot(dea.plot(inputs, outputs, RTS = input$mod, ORIENTATION = "in-out"))
-      output$graficoDeafrontier <- renderPlot(dea.plot.frontier(inputs, outputs, RTS = input$mod))
-    } else {
-      dea <- dea(inputs, outputs, RTS = input$mod, ORIENTATION = input$ori, SLACK = TRUE)
-
-      output$graficoDea <- renderPlot(dea.plot(inputs, outputs, RTS = input$mod, ORIENTATION = input$ori))
-      output$graficoDeafrontier <- renderPlot(dea.plot.frontier(inputs, outputs, RTS = input$mod))
-    }
-
-    listDEA <- data.matrix(dea$eff)
-    tableDea <- data.frame(listDEA)
-    tableDea <- cbind(DMU = rownames(tableDea), tableDea)
-
-    if (input$mod == "SCCR" || input$mod == "ADD") {
-      colnames(tableDea) <- c("DMU", "Efficiency Ranking Index")
-    } else {
-      if (input$ori == "out") {
-        tableDea[seq_len(tableDea), 2] <- 1 / tableDea[seq_len(tableDea), 2]
-      }
-      colnames(tableDea) <- c("DMU", "Efficiency Index")
-    }
-
-    rownames(tableDea) <- seq_len(tableDea)
-    tableDea <- arrange(tableDea, desc(tableDea[, 2]))
-
-    output$OutDEA <<- renderTable(tableDea, rownames = TRUE)
+    processDEA(input, output)
   })
 }
 
