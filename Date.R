@@ -15,10 +15,12 @@ library(longmemo)
 library(ptsuite)
 # Não está mais disponivel no CRAN
 library(plyr)
+library(dplyr)
 library(shinyFiles)
 library(tools)
 library(htmltools)
 library(markdown)
+library(stringi)
 
 # Constants
 datasetFolder <- "./datasets/"
@@ -59,9 +61,11 @@ ui <- navbarPage(
     sidebarLayout(
       sidebarPanel(
         fileInput("idArquivo", "Selecione o seu arquivo", multiple = TRUE, accept = c("text/csv", "text/comma-separated-values", "text/tab-separated-values", ".txt", ".xlsx", ".csv", ".tsv")),
-        shinyDirButton("folder", "Selecione a pasta do seu dataset", "Por favor selecione uma pasta", FALSE),
+        div(
+          id = "folderDiv",
+          shinyDirButton("folder", "Selecione a pasta do seu dataset", "Por favor selecione uma pasta", FALSE),
+        ),
         sliderInput("windowSize", "Tamanho da janela temporal:", min = 1, max = 10, value = 1, step = 1),
-        sliderInput("windowIndex", "Janela temporal à ser exibida:", min = 1, max = 10, value = 1, step = 1),
         tags$hr(),
         selectInput("typDMU", "Tipo de Arquivo:",
           c("DMU do APACHE BENCH" = "apache", "DMU do IPERF" = "iperf", "DMU Númerica" = "numerica", "Tabela" = "tabela"),
@@ -105,6 +109,7 @@ ui <- navbarPage(
         width = 3
       ),
       mainPanel(
+        sliderInput("windowIndex", "Janela temporal à ser exibida:", min = 1, max = 10, value = 1, step = 1),
         shinycssloaders::withSpinner(
           DTOutput("tbl")
         ),
@@ -124,8 +129,16 @@ ui <- navbarPage(
   ),
   tabPanel(
     "Ajuda",
+    value = "ajudaPage",
     fluidPage(
-      includeMarkdown("./ajuda.md")
+      div(
+        style = "justify-content: center; display: flex;",
+        textInput("search", "", placeholder = "buscar...", width = "70%"),
+      ),
+      div(
+        style = "justify-content: center; display: flex; padding-inline: 5rem;",
+        uiOutput("filteredMarkdown")
+      )
     )
   ),
   tabPanel(
@@ -220,14 +233,10 @@ ui <- navbarPage(
       dashboardHeader(disable = TRUE),
       dashboardSidebar(disable = TRUE),
       dashboardBody(
-        tags$h3("Table"),
-        box(
-          title = NULL, status = "info", solidHeader = TRUE,
-          collapsible = FALSE, width = 4,
-          tableOutput("OutDEA"),
-        ),
+        tags$h3("Indices DEA por janela de tempo"),
+        DTOutput("OutDEA")
       )
-    )
+    ),
   ),
   tabPanel(
     "GRAPHIC DEA",
@@ -243,6 +252,46 @@ ui <- navbarPage(
       )
     )
   ),
+  tags$style(HTML("
+    .navbar-nav {
+      float: none;
+    }
+
+    .navbar-nav li a[data-value='ajudaPage'] {
+        right: 0;
+        position: relative;
+    }
+
+    @media (min-width: 768px) {
+      .navbar-nav li a[data-value='ajudaPage'] {
+        right: 1rem;
+        position: absolute;
+      }
+    }
+
+    .nav li {
+      position: static;
+    }
+
+    button#folder {
+      overflow-wrap: break-word;
+      display: inline-block;
+      white-space: normal;
+      width: 100%;
+    }
+
+    #folderDiv {
+      justify-content: center;
+      display: flex;
+      margin: 0;
+      padding: 0 0 2rem 0;
+    }
+
+    #idArquivo_progress {
+      margin-bottom: 0;
+    }
+  ")
+  )
 )
 
 fooTable <<- data.frame(matrix(ncol = 7, nrow = 0))
@@ -479,9 +528,6 @@ calculateDMU <- function(filesDirsTable, fractalDivisionMethod, userSelectedVect
 
       timeSeriesResultTable <<- c(timeSeriesResultTable, list(DMUresults))
       timeSeries <<- c(timeSeries, list(timeSeriesResult))
-
-      # fooTable[nrow(fooTable) + 1, ] <<- list(DMUresults)
-      # fooDash <<- fooTable
     }
   }
   maxAmountOfIndexes <<- length(timeSeriesResultTable)
@@ -499,23 +545,14 @@ checkAndProcessData <- function(filesDirsTable, inputType, choosenVariables, fra
 
   if (is.null(choosenVariables)) {
     if (inputType == "tabela" || is.element("NULL", timeSeries)) {
-      # fooTableDEA <<- fooTable
     } else {
-      # fooTableDEA <<- fooTable[, tableColumnNames]
     }
   } else {
     if (is.element("NULL", timeSeries)) {
-      # vetor <- c(colnames(fooTable[, 2:ncol(fooTable)]) == choosenVariables)
-      # numeroTRUE <- sum(vetor, na.rm = TRUE)
-      # numeroVar <- length(choosenVariables)
-      # condTRUE <- numeroTRUE == numeroVar
-
       if (is.element("FALSE", vetor) && !isTRUE(condTRUE)) {
-        # fooTableDEA <<- fooTable
         stop("O limite máximo de colunas desta tábela é o número de colunas da tábela adicionada, caso queira mais colunas, tera que adicionar DMU por DMU")
       }
     }
-    # fooTableDEA <<- fooTable[, c("DMU", choosenVariables)]
   }
 }
 
@@ -523,7 +560,7 @@ processDEA <- function(input, output) {
   showTab(inputId = "tabs", target = "DEA Table")
   showTab(inputId = "tabs", target = "GRAPHIC DEA")
   combinedTableDea <- data.frame()
-  # seq_along(timeSeriesResultTable)
+
   for (windowIndex in 1:length(timeSeriesResultTable)) {
     resultTimeWindow <- timeSeriesResultTable[[windowIndex]]
     resultTimeWindowDataFrame <- data.frame(matrix(unlist(resultTimeWindow), nrow = length(resultTimeWindow), byrow = TRUE))
@@ -582,25 +619,33 @@ processDEA <- function(input, output) {
     tableDea <- cbind(DMU = rownames(tableDea), tableDea)
 
     if (input$mod == "SCCR" || input$mod == "ADD") {
-      colnames(tableDea) <- c("DMU", "Efficiency Ranking Index")
+      colnames(tableDea) <- c("DMU", sprintf("Efficiency Ranking Index timeseries %s", windowIndex))
     } else {
       if (input$ori == "out") {
         tableDea[seq_len(nrow(tableDea)), 2] <- 1 / tableDea[seq_len(nrow(tableDea)), 2]
       }
-      colnames(tableDea) <- c("DMU", "Efficiency Index")
+      colnames(tableDea) <- c("DMU", sprintf("Efficiency Index timeseries %s", windowIndex))
     }
 
     rownames(tableDea) <- seq_len(nrow(tableDea))
-    tableDea <- arrange(tableDea, desc(tableDea[, 2]))
+    tableDea <- arrange(tableDea, tableDea[, 1])
 
     if (nrow(combinedTableDea) < 1) {
       combinedTableDea <- tableDea
     } else {
-      combinedTableDea <- cbind(combinedTableDea, tableDea)
+      combinedTableDea <- cbind(combinedTableDea, tableDea[[2]])
     }
   }
 
-  output$OutDEA <- renderTable(combinedTableDea, rownames = TRUE)
+  # output$OutDEA <- renderTable(combinedTableDea, rownames = TRUE)
+  output$OutDEA <- renderDT({
+    datatable(
+      # Aqui você coloca o dataframe que deseja exibir
+      # Exemplo: mtcars
+      combinedTableDea,
+      options = list(pageLength = 10, autoWidth = TRUE, ordering = TRUE)
+    )
+  })
 }
 
 server <- function(input, output, session) {
@@ -617,7 +662,7 @@ server <- function(input, output, session) {
   output$tbl <- renderDT(data.frame(matrix(ncol = 0, nrow = 0)))
 
   # selecionar dataset
-  shinyDirChoose(input, "folder", roots = c(wd = datasetFolder), filetypes = c("", "txt", "csv"))
+  shinyDirChoose(input, "folder", roots = c(wd = datasetFolder), filetypes = c("", "txt", "xlsx", "csv", ".tsv"))
 
   filesDirsTable <- reactiveVal(data.frame(datapath = character(), name = character(), stringsAsFactors = FALSE))
   oldFileIndex <- reactiveVal(0)
@@ -636,6 +681,61 @@ server <- function(input, output, session) {
     timeSeries <<- list()
     hideTab(inputId = "tabs", target = "DMU Analysis")
     click("idAtualizar")
+  })
+
+  # Carrega a página de ajuda
+  fullContent <- reactive({
+    fileContent <- readLines("./ajuda.md")
+    markdown::markdownToHTML(text = paste(fileContent, collapse = "\n"), fragment.only = TRUE)
+  })
+
+  output$filteredMarkdown <- renderUI({
+    contentText <- fullContent()
+    if (input$search == "") {
+      HTML(markdownToHTML(text = contentText, fragment.only = TRUE))
+    } else {
+      lines <- readLines("./ajuda.md")
+      normalizedLines <- stri_trans_general(tolower(lines), "Latin-ASCII")
+      normalizedSearch <- stri_trans_general(tolower(stri_trim(input$search)), "Latin-ASCII")
+
+      filteredLines <- character()
+      inRelevantSection <- FALSE
+      currentSectionLevel <- 0
+
+      for (i in seq_along(normalizedLines)) {
+        line <- lines[i]
+        normalizedLine <- normalizedLines[i]
+
+        if (grepl("^(#)\\s", normalizedLine)) {
+          sectionLevel <- 1
+        } else if (grepl("^(##)\\s", normalizedLine)) {
+          sectionLevel <- 2
+        } else if (grepl("^(###)\\s", normalizedLine)) {
+          sectionLevel <- 3
+        } else {
+          sectionLevel <- 0
+        }
+        lineContainsSearch <- grepl(normalizedSearch, normalizedLine)
+
+        if (sectionLevel > currentSectionLevel) {
+          inRelevantSection <- FALSE
+        }
+        if (lineContainsSearch && sectionLevel > 0) {
+          inRelevantSection <- TRUE
+        }
+        if (lineContainsSearch || inRelevantSection) {
+          filteredLines <- c(filteredLines, line)
+        }
+        currentSectionLevel <- sectionLevel
+      }
+      if (length(filteredLines) > 0) {
+        filteredText <- paste(filteredLines, collapse = "\n")
+        filteredHTML <- markdownToHTML(text = filteredText, fragment.only = TRUE)
+        HTML(filteredHTML)
+      } else {
+        HTML("Nenhum resultado encontrado.")
+      }
+    }
   })
 
   # Loads all files in the selected folder when the user clicks to select the folder
@@ -665,10 +765,6 @@ server <- function(input, output, session) {
 
     filesDirsTable(data.frame(datapath = arquivo_caminho, name = arquivo_nome, stringsAsFactors = FALSE))
   })
-
-  # observeEvent(input$windowSize, {
-  #   # updateSliderInput(session, "windowIndex", max = input$windowSize)
-  # })
 
   observeEvent(input$idBotao, {
     hide("oculDEA")
