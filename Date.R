@@ -445,6 +445,9 @@ processOtherData <- function(filesDirsTable, fileIndex) {
 }
 
 preprocessData <- function(filesDirsTable, inputType) {
+  if (length(filesDirsTable) < 1) {
+    stop("Selecione um arquivo ou dataset primeiro!")
+  }
   kindOfProcess <- NULL
   if (inputType == "iperf") kindOfProcess <- processIperfData
   else if (inputType == "apache") kindOfProcess <- processApacheData
@@ -534,7 +537,19 @@ calculateDMU <- function(filesDirsTable, fractalDivisionMethod, userSelectedVect
 }
 
 checkAndProcessData <- function(filesDirsTable, inputType, choosenVariables, fractalDivisionMethod, userSelectedVectorSize) {
-  if (is.null(filesDirsTable) || length(filesDirsTable[, 1]) < 1) stop("Sem arquivo")
+  if (is.null(filesDirsTable) || length(filesDirsTable[, 1]) < 1) {
+    shinyalert(
+      title = "Aviso",
+      text = "Selecione um arquivo ou dataset primeiro!",
+      type = "warning",
+      closeOnClickOutside = TRUE,
+      showCancelButton = FALSE,
+      showConfirmButton = TRUE,
+      confirmButtonText = "OK",
+      confirmButtonCol = "darkred",
+    )
+    return(FALSE)
+  } 
   if (inputType == "tabela") {
     for (nr in seq_along(filesDirsTable[, 1])) {
       processTableData(filesDirsTable, nr)
@@ -554,6 +569,7 @@ checkAndProcessData <- function(filesDirsTable, inputType, choosenVariables, fra
       }
     }
   }
+  return(TRUE)
 }
 
 processDEA <- function(input, output) {
@@ -578,16 +594,25 @@ processDEA <- function(input, output) {
     }
 
     data_dea <- delete.na(dataMatrix) # creates the data_dea table
+    defaultInput <- "FractalDim"
 
     if (is.null(input$idInputs)) {
-      inputs <- data_dea[, "FractalDim"] # select only input variables values
+      if (length(input$variable) < 1) {
+        inputs <- data_dea[, "FractalDim"] # select only input variables values
+      } else if ("FractalDim" %in% input$variable) {
+        inputs <- data_dea[, "FractalDim"] # select only input variables values
+      } else {
+        inputs <- data_dea[, input$variable[1]]
+        defaultInput <- input$variable[1]
+      }
     } else {
       inputs <- data_dea[, input$idInputs] # select only input variables values
     }
 
     if (is.null(input$idOutputs)) {
-      if (colnames(data_dea)[1] != "FractalDim") {
-        col_idx <- grep("FractalDim", names(data_dea))
+
+      if (colnames(data_dea)[1] != defaultInput) {
+        col_idx <- grep(defaultInput, names(data_dea))
         data_dea <- data_dea[, c(col_idx, (seq_len(data_dea))[-col_idx])]
         outputs <- data_dea[, c(2:ncol(data_dea))] # select only output variables values, SLACK=TRUE
       } else {
@@ -637,11 +662,8 @@ processDEA <- function(input, output) {
     }
   }
 
-  # output$OutDEA <- renderTable(combinedTableDea, rownames = TRUE)
   output$OutDEA <- renderDT({
     datatable(
-      # Aqui você coloca o dataframe que deseja exibir
-      # Exemplo: mtcars
       combinedTableDea,
       options = list(pageLength = 10, autoWidth = TRUE, ordering = TRUE)
     )
@@ -762,8 +784,11 @@ server <- function(input, output, session) {
 
     arquivo_caminho <- input$idArquivo$datapath
     arquivo_nome <- tools::file_path_sans_ext(basename(input$idArquivo$name))
-
-    filesDirsTable(data.frame(datapath = arquivo_caminho, name = arquivo_nome, stringsAsFactors = FALSE))
+    arquivos_df <- data.frame(datapath = arquivo_caminho, name = arquivo_nome, stringsAsFactors = FALSE)
+    filesDirsTable(arquivos_df)
+    preprocessData(arquivos_df, input$typDMU)
+    updateSliderInput(session, "windowSize", value = 1, max = maxAmountOfWindows)
+    enable("windowSize")
   })
 
   observeEvent(input$idBotao, {
@@ -781,7 +806,8 @@ server <- function(input, output, session) {
       tryCatch(
         withCallingHandlers(
           {
-            checkAndProcessData(filesDirsTable, input$typDMU, input$variable, input$sep, input$windowSize)
+            checkStatus <- checkAndProcessData(filesDirsTable, input$typDMU, input$variable, input$sep, input$windowSize)
+            if (!checkStatus) return()
             updateSliderInput(session, "windowIndex", max = maxAmountOfIndexes)
             enable("windowIndex")
           },
