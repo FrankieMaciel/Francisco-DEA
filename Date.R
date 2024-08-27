@@ -290,8 +290,7 @@ ui <- navbarPage(
     #idArquivo_progress {
       margin-bottom: 0;
     }
-  ")
-  )
+  "))
 )
 
 fooTable <<- data.frame(matrix(ncol = 7, nrow = 0))
@@ -421,9 +420,11 @@ processTableData <- function(filesDirsTable, fileIndex) {
 
 processIperfData <- function(filesDirsTable, fileIndex) {
   arquivo <- read.csv(filesDirsTable[[fileIndex, "datapath"]], header = FALSE, sep = "", skip = 6)
+  if (ncol(arquivo) < 8) {
+    return(NULL)
+  }
   df <- data.frame(arquivo[, 8], arquivo[, 7])
-
-  if (is.null(df)) return()
+  print(df)
   colnames(df) <- c("Um", "Dois")
   new_df <- df[!grepl("K", df$Um), ]
   new_df2 <- df[!grepl("K", df$Dois), ]
@@ -435,13 +436,20 @@ processIperfData <- function(filesDirsTable, fileIndex) {
 
 processApacheData <- function(filesDirsTable, fileIndex) {
   arquivo <- read.csv(filesDirsTable[[fileIndex, "datapath"]], header = FALSE, sep = ",", skip = 1)
-  return(c(as.numeric(unlist(arquivo[2]))))
+  if (ncol(arquivo) >= 2) {
+    return(c(as.numeric(unlist(arquivo[2]))))
+  } else {
+    return(NULL)
+  }
 }
 
 processOtherData <- function(filesDirsTable, fileIndex) {
   arquivo <- read.table(filesDirsTable[[fileIndex, "datapath"]])
-  if (is.null(arquivo)) return()
-  else return(c(as.numeric(unlist(arquivo))))
+  if (is.null(arquivo)) {
+    return(NULL)
+  } else {
+    return(c(as.numeric(unlist(arquivo))))
+  }
 }
 
 preprocessData <- function(filesDirsTable, inputType) {
@@ -449,18 +457,38 @@ preprocessData <- function(filesDirsTable, inputType) {
     stop("Selecione um arquivo ou dataset primeiro!")
   }
   kindOfProcess <- NULL
-  if (inputType == "iperf") kindOfProcess <- processIperfData
-  else if (inputType == "apache") kindOfProcess <- processApacheData
-  else kindOfProcess <- processOtherData
+  if (inputType == "iperf") {
+    kindOfProcess <- processIperfData
+  } else if (inputType == "apache") {
+    kindOfProcess <- processApacheData
+  } else if (inputType == "tabela") {
+    kindOfProcess <- processTableData
+  } else {
+    kindOfProcess <- processOtherData
+  }
 
   # find biggest vetor
   vectors <<- lapply(seq_along(filesDirsTable[, 1]), function(nr) {
     vetor <- kindOfProcess(filesDirsTable, nr)
-
+    if (is.null(vetor)) {
+      shinyalert(
+        title = "Aviso",
+        text = "Selecione um tipo de arquivo válido!",
+        type = "warning",
+        closeOnClickOutside = TRUE,
+        showCancelButton = FALSE,
+        showConfirmButton = TRUE,
+        confirmButtonText = "OK",
+        confirmButtonCol = "darkred",
+      )
+      return(NULL)
+    }
     if (length(vetor) > biggestVector) biggestVector <<- length(vetor)
     return(vetor)
   })
-
+  if (is.null(vectors)) {
+    return()
+  }
   maxAmountOfWindows <<- floor(biggestVector / 25)
 }
 
@@ -472,7 +500,6 @@ calculateDMU <- function(filesDirsTable, fractalDivisionMethod, userSelectedVect
     DMUresults <- vector()
     timeSeriesResult <- list()
     for (nr in seq_along(filesDirsTable[, 1])) {
-
       name <- tools::file_path_sans_ext(filesDirsTable[[nr, "name"]])
       vetor <- vectors[[nr]]
       num_full_groups <- length(vetor) %/% amountPerWindow
@@ -549,7 +576,7 @@ checkAndProcessData <- function(filesDirsTable, inputType, choosenVariables, fra
       confirmButtonCol = "darkred",
     )
     return(FALSE)
-  } 
+  }
   if (inputType == "tabela") {
     for (nr in seq_along(filesDirsTable[, 1])) {
       processTableData(filesDirsTable, nr)
@@ -610,7 +637,6 @@ processDEA <- function(input, output) {
     }
 
     if (is.null(input$idOutputs)) {
-
       if (colnames(data_dea)[1] != defaultInput) {
         col_idx <- grep(defaultInput, names(data_dea))
         data_dea <- data_dea[, c(col_idx, (seq_len(data_dea))[-col_idx])]
@@ -720,7 +746,7 @@ server <- function(input, output, session) {
       normalizedLines <- stri_trans_general(tolower(lines), "Latin-ASCII")
       normalizedSearch <- stri_trans_general(tolower(stri_trim(input$search)), "Latin-ASCII")
 
-      filteredLines <- character()
+      filteredLines <- c()
       inRelevantSection <- FALSE
       currentSectionLevel <- 0
 
@@ -728,27 +754,30 @@ server <- function(input, output, session) {
         line <- lines[i]
         normalizedLine <- normalizedLines[i]
 
-        if (grepl("^(#)\\s", normalizedLine)) {
+        # Identifica o nível da seção com base nos cabeçalhos (#, ##, ###)
+        if (grepl("^#\\s", normalizedLine)) {
           sectionLevel <- 1
-        } else if (grepl("^(##)\\s", normalizedLine)) {
+        } else if (grepl("^##\\s", normalizedLine)) {
           sectionLevel <- 2
-        } else if (grepl("^(###)\\s", normalizedLine)) {
+        } else if (grepl("^###\\s", normalizedLine)) {
           sectionLevel <- 3
         } else {
           sectionLevel <- 0
         }
         lineContainsSearch <- grepl(normalizedSearch, normalizedLine)
 
-        if (sectionLevel > currentSectionLevel) {
+        if (sectionLevel > 0 && sectionLevel <= currentSectionLevel) {
           inRelevantSection <- FALSE
         }
-        if (lineContainsSearch && sectionLevel > 0) {
+        if (lineContainsSearch) {
           inRelevantSection <- TRUE
         }
-        if (lineContainsSearch || inRelevantSection) {
+        if (inRelevantSection) {
           filteredLines <- c(filteredLines, line)
         }
-        currentSectionLevel <- sectionLevel
+        if (sectionLevel > 0) {
+          currentSectionLevel <- sectionLevel
+        }
       }
       if (length(filteredLines) > 0) {
         filteredText <- paste(filteredLines, collapse = "\n")
@@ -807,7 +836,9 @@ server <- function(input, output, session) {
         withCallingHandlers(
           {
             checkStatus <- checkAndProcessData(filesDirsTable, input$typDMU, input$variable, input$sep, input$windowSize)
-            if (!checkStatus) return()
+            if (!checkStatus) {
+              return()
+            }
             updateSliderInput(session, "windowIndex", max = maxAmountOfIndexes)
             enable("windowIndex")
           },
@@ -903,27 +934,30 @@ server <- function(input, output, session) {
     createShowTable(input$windowIndex, input$variable, input$typDMU, output, session)
   })
 
-  observeEvent(input$idDeleteRows, {
-    if (!is.null(isolate(input$tbl_rows_selected))) {
-      row <- isolate(input$tbl_rows_selected)
-      timeSeriresIndex <- input$windowIndex
-      timeSeriesResultTable[[timeSeriresIndex]] <<- timeSeriesResultTable[[timeSeriresIndex]][-row]
+  observeEvent(input$idDeleteRows,
+    {
+      if (!is.null(isolate(input$tbl_rows_selected))) {
+        row <- isolate(input$tbl_rows_selected)
+        timeSeriresIndex <- input$windowIndex
+        timeSeriesResultTable[[timeSeriresIndex]] <<- timeSeriesResultTable[[timeSeriresIndex]][-row]
 
-      timeSeries[[timeSeriresIndex]] <<- timeSeries[[timeSeriresIndex]][-row]
+        timeSeries[[timeSeriresIndex]] <<- timeSeries[[timeSeriresIndex]][-row]
 
-      click("idAtualizar")
-    } else {
-      shinyalert(
-        title = "Selecione a linha que deseja Excluir",
-        type = "error",
-        closeOnClickOutside = TRUE,
-        showCancelButton = FALSE,
-        showConfirmButton = TRUE,
-        confirmButtonText = "OK",
-        confirmButtonCol = "darkred",
-      )
-    }
-  }, ignoreInit = TRUE)
+        click("idAtualizar")
+      } else {
+        shinyalert(
+          title = "Selecione a linha que deseja Excluir",
+          type = "error",
+          closeOnClickOutside = TRUE,
+          showCancelButton = FALSE,
+          showConfirmButton = TRUE,
+          confirmButtonText = "OK",
+          confirmButtonCol = "darkred",
+        )
+      }
+    },
+    ignoreInit = TRUE
+  )
 
   observeEvent(input$tbl_cell_edit, {
     row <- input$tbl_cell_edit$row

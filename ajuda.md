@@ -1,5 +1,13 @@
 Bem-vindo ao **FRANCISCO**, uma ferramenta desenvolvida para auxiliar na análise de dados temporais e cálculo de dimensões fractais. Este guia fornecerá uma visão geral das principais funcionalidades do site.
 
+# FAQ (Perguntas Frequentes)
+## Como carregar meus dados?
+
+Use o Botão Browse para selecionar um arquivo ou Selecionar a pasta do seu dataset para carregar uma pasta inteira.
+## Quais formatos de arquivo são suportados?
+
+A ferramenta suporta vários formatos de dados, como "DMU do APACHE BENCH".
+
 ---
 
 # 1. Carregamento de Dados
