@@ -1,24 +1,26 @@
-Bem-vindo ao **FRANCISCO**, uma ferramenta desenvolvida para auxiliar na análise de dados temporais e cálculo de dimensões fractais. Este guia fornecerá uma visão geral das principais funcionalidades do site.
+Bem-vindo ao **FRANCISCO**, uma ferramenta desenvolvida para auxiliar na análise de dados temporais e cálculo de dimensões fractais. Este guia fornecerá uma visão geral das principais funcionalidades do projeto.
 
 # FAQ (Perguntas Frequentes)
 ## Como carregar meus dados?
 
 Use o Botão Browse para selecionar um arquivo ou Selecionar a pasta do seu dataset para carregar uma pasta inteira.
+
 ## Quais formatos de arquivo são suportados?
 
-A ferramenta suporta vários formatos de dados, como "DMU do APACHE BENCH".
+A ferramenta suporta vários formatos de dados, como "DMU do APACHE BENCH", "DMU do IPERF", "DMU Numérica" e "Tabela".
+
+## Até quantas janelas de tempo posso escolher?
+A quantidade de janelas de tempo é determinada pela extensão da série temporal presente no arquivo analisado. O programa toma como referência o maior arquivo disponível para definir o tamanho das janelas, garantindo uma análise consistente e comparável entre diferentes séries temporais.
 
 ---
 
 # 1. Carregamento de Dados
 
   ## 1.1 Seleção de Arquivo
-  Nesta seção, você pode **carregar seu arquivo de dados** para análise.
 
-  - **Botão Browse**: Use este botão para selecionar um arquivo específico no seu dispositivo.
+  - **Botão Browse**: Neste botão, você pode **carregar seu arquivo de dados** para análise, é possivel selecionar um ou mais arquivos do seu computador.
 
   ## 1.2 Seleção de Pasta
-  Você pode optar por **selecionar uma pasta inteira** para análise.
 
   - **Botão Selecionar a pasta do seu dataset**: Este botão permite selecionar uma pasta contendo vários arquivos de dados.
 

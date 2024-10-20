@@ -21,6 +21,7 @@ library(tools)
 library(htmltools)
 library(markdown)
 library(stringi)
+library(future.apply)
 
 # Constants
 datasetFolder <- "./datasets/"
@@ -65,7 +66,7 @@ ui <- navbarPage(
           id = "folderDiv",
           shinyDirButton("folder", "Selecione a pasta do seu dataset", "Por favor selecione uma pasta", FALSE),
         ),
-        sliderInput("windowSize", "Tamanho da janela temporal:", min = 1, max = 10, value = 1, step = 1),
+        sliderInput("windowSize", "Tamanho da janela temporal:", min = 60, max = 70, value = 1, step = 1),
         tags$hr(),
         selectInput("typDMU", "Tipo de Arquivo:",
           c("DMU do APACHE BENCH" = "apache", "DMU do IPERF" = "iperf", "DMU Númerica" = "numerica", "Tabela" = "tabela"),
@@ -91,6 +92,7 @@ ui <- navbarPage(
             "DctII" = "dctII", "Genton" = "genton"
           )
         ),
+        checkboxInput("deamulti_checkbox", "Usar valores para modo multiplicativo DEA", value = FALSE),
         actionButton("idBotao", "Gerar Tabela"),
         div(
           id = "oculDEA",
@@ -303,6 +305,8 @@ biggestVector <<- 0
 maxAmountOfWindows <<- 0
 maxAmountOfIndexes <<- 0
 vectors <<- list()
+tipo_dmu <<- 'apache'
+filteredFilesDirsTable <<- list()
 
 timeSeriesResultTable <<- list()
 showDataFrame <<- data.frame()
@@ -385,10 +389,14 @@ createShowTable <- function(WindowIndex, choosenVariables, inputType, output, se
   if (is.null(timeSeriesResultTable) || length(timeSeriesResultTable) < 1) {
     return()
   }
-
   showTableWindow <- timeSeriesResultTable[[WindowIndex]]
-  showDataFrame <<- data.frame(matrix(unlist(showTableWindow), nrow = length(showTableWindow), byrow = TRUE))
-  colnames(showDataFrame) <<- tableColumnNames
+  print(showTableWindow)
+
+  showDataFrame <<- showTableWindow
+  if (inputType != "tabela") {
+    showDataFrame <<- data.frame(matrix(unlist(showTableWindow), nrow = length(showTableWindow), byrow = TRUE))
+    colnames(showDataFrame) <<- tableColumnNames
+  }
 
   if (inputType != "tabela" && !is.null(choosenVariables)) {
     FiltereSshowDataFrame <- showDataFrame[, c("DMU", choosenVariables)]
@@ -398,28 +406,30 @@ createShowTable <- function(WindowIndex, choosenVariables, inputType, output, se
   renderShowTable(output, session, WindowIndex)
 }
 
-processTableData <- function(filesDirsTable, fileIndex) {
-  arquivo <- read.xlsx(filesDirsTable[[fileIndex, "datapath"]], startRow = 1)
-  if (is.null(arquivo)) stop()
-  if (nrow(fooTable) > 0) {
-    fooTable <<- rbind(fooTable[, colnames(arquivo)], arquivo)
-    fooTable[, 2:ncol(fooTable)] <<- sapply(fooTable[2:ncol(fooTable)], as.numeric)
-    fooTable[, 2:ncol(fooTable)] <<- format(round(fooTable[, 2:ncol(fooTable)], 3), nsmall = 3)
-    options(scipen = 999)
-    str(fooTable)
-    fooDash <<- fooTable
-  } else {
-    fooTable <<- arquivo
-    fooTable[, 2:ncol(fooTable)] <<- sapply(fooTable[2:ncol(fooTable)], as.numeric)
-    fooTable[, 2:ncol(fooTable)] <<- format(round(fooTable[, 2:ncol(fooTable)], 3), nsmall = 3)
-    fooDash <<- fooTable
+processTableData <- function(filesDirsTable, nr, ignoreErrors) {
+  if (tools::file_ext(filesDirsTable[[nr]]) != "xlsx") {
+    if (ignoreErrors) return(ignoreErrors)
+    shinyalert(
+      title = "Aviso",
+      text = "Só é permitido arquivos do tipo '.xlsx' para o modo tabela!",
+      type = "warning",
+      closeOnClickOutside = TRUE,
+      showCancelButton = FALSE,
+      showConfirmButton = TRUE,
+      confirmButtonText = "OK",
+      confirmButtonCol = "darkred",
+    )
+    return(TRUE)
   }
-  listTable <- vector(mode = "list", length = nrow(arquivo))
-  timeSeries <<- c(timeSeries, listTable)
+  arquivo <- read.xlsx(filesDirsTable[[nr]], startRow = 1)
+  if (is.null(arquivo)) stop()
+  # print(arquivo)
+  timeSeriesResultTable <<- c(timeSeriesResultTable, list(arquivo))
+  return(ignoreErrors)
 }
 
-processIperfData <- function(filesDirsTable, fileIndex) {
-  arquivo <- read.csv(filesDirsTable[[fileIndex, "datapath"]], header = FALSE, sep = "", skip = 6)
+processIperfData <- function(file) {
+  arquivo <- read.csv(file, header = FALSE, sep = "", skip = 6)
   if (ncol(arquivo) < 8) {
     return(NULL)
   }
@@ -434,8 +444,8 @@ processIperfData <- function(filesDirsTable, fileIndex) {
   return(as.numeric(as.character(df_vetor$DMU)))
 }
 
-processApacheData <- function(filesDirsTable, fileIndex) {
-  arquivo <- read.csv(filesDirsTable[[fileIndex, "datapath"]], header = FALSE, sep = ",", skip = 1)
+processApacheData <- function(file) {
+  arquivo <- read.csv(file, header = FALSE, sep = ",", skip = 1)
   if (ncol(arquivo) >= 2) {
     return(c(as.numeric(unlist(arquivo[2]))))
   } else {
@@ -443,8 +453,8 @@ processApacheData <- function(filesDirsTable, fileIndex) {
   }
 }
 
-processOtherData <- function(filesDirsTable, fileIndex) {
-  arquivo <- read.table(filesDirsTable[[fileIndex, "datapath"]])
+processOtherData <- function(file) {
+  arquivo <- read.table(file)
   if (is.null(arquivo)) {
     return(NULL)
   } else {
@@ -456,115 +466,157 @@ preprocessData <- function(filesDirsTable, inputType) {
   if (length(filesDirsTable) < 1) {
     stop("Selecione um arquivo ou dataset primeiro!")
   }
+  if (inputType == "tabela") {
+    timeSeriesResultTable <<- list()
+    print(filesDirsTable[, 1])
+    ignoreFutureWrongFiles <<- FALSE
+    lapply(seq_along(filesDirsTable[, 1]), function(nr) {
+      ignoreFutureWrongFiles <<- processTableData(filesDirsTable[, 1], nr, ignoreFutureWrongFiles)
+    })
+    maxAmountOfIndexes <<- length(filesDirsTable[, 1])
+    return('tabela')
+  }
+  alowedType <- 'txt'
   kindOfProcess <- NULL
   if (inputType == "iperf") {
     kindOfProcess <- processIperfData
+    alowedType <- 'txt'
   } else if (inputType == "apache") {
     kindOfProcess <- processApacheData
-  } else if (inputType == "tabela") {
-    kindOfProcess <- processTableData
+    alowedType <- 'csv'
   } else {
     kindOfProcess <- processOtherData
+    alowedType <- 'txt'
   }
 
+  filtrarArquivosPorExtensao <- function(arquivos, extensao) {
+    resultados <- list()
+    for (arquivo in arquivos) {
+      if (tools::file_ext(arquivo) == extensao) {
+        resultados <- c(resultados, arquivo)
+      }
+    }
+    return(resultados)
+  }
+  filteredFilesDirsTable <<- filtrarArquivosPorExtensao(filesDirsTable[[1]], alowedType)
+  if (length(filteredFilesDirsTable) != length(filesDirsTable[[1]])) {
+    shinyalert(
+      title = "Aviso",
+      text = sprintf("Só é permitido arquivos do tipo '.%s' para este modo!", alowedType),
+      type = "warning",
+      closeOnClickOutside = TRUE,
+      showCancelButton = FALSE,
+      showConfirmButton = TRUE,
+      confirmButtonText = "OK",
+      confirmButtonCol = "darkred",
+    )
+  }
   # find biggest vetor
-  vectors <<- lapply(seq_along(filesDirsTable[, 1]), function(nr) {
-    vetor <- kindOfProcess(filesDirsTable, nr)
+  vectors <<- lapply(filteredFilesDirsTable, function(nr) {
+    vetor <- kindOfProcess(nr)
     if (is.null(vetor)) {
-      shinyalert(
-        title = "Aviso",
-        text = "Selecione um tipo de arquivo válido!",
-        type = "warning",
-        closeOnClickOutside = TRUE,
-        showCancelButton = FALSE,
-        showConfirmButton = TRUE,
-        confirmButtonText = "OK",
-        confirmButtonCol = "darkred",
-      )
       return(NULL)
     }
     if (length(vetor) > biggestVector) biggestVector <<- length(vetor)
     return(vetor)
   })
   if (is.null(vectors)) {
-    return()
+    return(NULL)
   }
-  maxAmountOfWindows <<- floor(biggestVector / 25)
+  maxAmountOfWindows <<- biggestVector
 }
 
-calculateDMU <- function(filesDirsTable, fractalDivisionMethod, userSelectedVectorSize) {
-  amountPerWindow <- floor(biggestVector / userSelectedVectorSize)
+calculateDMU <- function(fractalDivisionMethod, userSelectedVectorSize, deamulti_checkbox) {
   timeSeriesResultTable <<- list()
-  # process data
-  for (windowIndex in 1:userSelectedVectorSize) {
-    DMUresults <- vector()
-    timeSeriesResult <- list()
-    for (nr in seq_along(filesDirsTable[, 1])) {
-      name <- tools::file_path_sans_ext(filesDirsTable[[nr, "name"]])
-      vetor <- vectors[[nr]]
-      num_full_groups <- length(vetor) %/% amountPerWindow
-      remainder <- length(vetor) %% amountPerWindow
-      vetor_particionado <- split(vetor, c(rep(1:num_full_groups, each = amountPerWindow), rep(num_full_groups + 1, remainder)))
-      if (remainder > 0) {
-        vetor_particionado <- vetor_particionado[-length(vetor_particionado)]
-      }
+  plan(multisession)
+  processa_subvetores <- function(nr, windowIndex) {
+    name <- tools::file_path_sans_ext(basename(filteredFilesDirsTable[[nr]]))
+    vetor <- vectors[[nr]]
+    length_vetor <- length(vetor)
+    windowSize <- userSelectedVectorSize
 
-      subvetor <- vetor_particionado[[windowIndex]]
-      timeSeriesResult <- c(timeSeriesResult, list(subvetor))
+    vetor_particionado <- lapply(1:(length_vetor - windowSize + 1), function(i) {
+      vetor[i:(i + windowSize - 1)]
+    })
 
-      dim <- as.numeric(unlist(fd.estimate(subvetor, method = fractalDivisionMethod)[2]))
-      dim <- format(round(dim, 3), nsmall = 3)
-
-      media <- mean(subvetor, na.rm = FALSE)
-      media <- format(round(media, 3), nsmall = 3)
-
-      hurst <- as.numeric(unlist(hurstexp(subvetor, display = FALSE, d = amountPerWindow)[1]))
-      hurst <- format(round(hurst, 3), nsmall = 3)
-
-      varianca <- as.numeric(unlist(var(subvetor, na.rm = TRUE)[1]))
-      varianca <- format(round(varianca, 3), nsmall = 3)
-
-      whittleEstimator <- WhittleEst(subvetor)
-      whittleEstimator <- whittleEstimator$coefficients[[1, 1]]
-      whittleEstimator <- format(round(whittleEstimator, 3), nsmall = 3)
-
-      # o vetor não pode ter zeros
-      d <- subvetor
-      d <- d[d != 0]
-      tailParameter <- alpha_mle(d)
-      tailParameter <- format(round(tailParameter$shape, 3), nsmall = 3)
-
-      results <- c(name, dim, media, hurst, varianca, whittleEstimator, tailParameter)
-      DMUresults <- c(DMUresults, list(results))
+    if (windowIndex > length(vetor_particionado)) {
+      return(NULL)
     }
 
-    if (is.element("NULL", timeSeries)) {
-      fooTableDMU <- data.frame(matrix(ncol = 7, nrow = 0))
-      fooDashDMU <- data.frame(matrix(ncol = 7, nrow = 0))
-
-      colnames(fooTableDMU) <- tableColumnNames
-      colnames(fooDashDMU) <- tableColumnNames
-      fooTableDMU[nrow(fooTableDMU) + 1, ] <- list(DMUresults)
-      print(fooTableDMU)
-      fooTable <<- rbind(fooTable, fooTableDMU[, colnames(fooTable)])
-
-      fooDashDMU[nrow(fooTable), ] <- list(DMUresults)
-      fooDash <<- fooDashDMU
-    } else {
-      if (ncol(fooTable) < 7) {
-        fooTable <<- data.frame(matrix(ncol = 7, nrow = 0))
-        colnames(fooTable) <<- tableColumnNames
-      }
-
-      timeSeriesResultTable <<- c(timeSeriesResultTable, list(DMUresults))
-      timeSeries <<- c(timeSeries, list(timeSeriesResult))
+    log10Transform <- function(x) {
+      if (x < 10) return(log10(x / 10^-5))
+      else return(log10(x))
     }
+    
+    subvetor <- vetor_particionado[[windowIndex]]
+    
+    dim <- as.numeric(unlist(fd.estimate(subvetor, method = fractalDivisionMethod)[2]))
+    media <- mean(subvetor, na.rm = FALSE)
+    hurst <- as.numeric(unlist(hurstexp(subvetor, display = FALSE, d = windowSize)[1]))
+    varianca <- var(subvetor, na.rm = TRUE)
+    whittleEstimator <- WhittleEst(subvetor)$coefficients[[1, 1]]
+
+    d <- subvetor[subvetor != 0]
+    tailParameter <- alpha_mle(d)$shape
+
+    if (deamulti_checkbox) {
+      dim <- log10Transform(dim)
+      media <- log10Transform(media)
+      hurst <- log10Transform(hurst)
+      varianca <- log10Transform(varianca)
+      whittleEstimator <- log10Transform(whittleEstimator)
+      tailParameter <- log10Transform(tailParameter)
+    }
+
+    results <- c(name, 
+                format(round(dim, 3), nsmall = 3),
+                format(round(media, 3), nsmall = 3),
+                format(round(hurst, 3), nsmall = 3),
+                format(round(varianca, 3), nsmall = 3),
+                format(round(whittleEstimator, 3), nsmall = 3),
+                format(round(tailParameter, 3), nsmall = 3))
+
+    return(c(list(results), list(subvetor)))
   }
-  maxAmountOfIndexes <<- length(timeSeriesResultTable)
+
+  if (!exists("fooTable")) {
+    fooTable <- data.frame(matrix(ncol = 7, nrow = 0))
+    colnames(fooTable) <- tableColumnNames
+  }
+
+  if (!exists("fooDash")) {
+    fooDash <- data.frame(matrix(ncol = 7, nrow = 0))
+    colnames(fooDash) <- tableColumnNames
+  }
+
+  if (!exists("timeSeriesResultTable")) {
+    timeSeriesResultTable <<- list()
+  }
+  if (!exists("timeSeries")) {
+    timeSeries <<- list()
+  }
+
+  processa_janela <- function(windowIndex) {
+    DMUresults <- future_lapply(seq_along(filteredFilesDirsTable), processa_subvetores, 
+                                windowIndex = windowIndex, future.seed = TRUE)
+
+    DMUresults <- Filter(Negate(is.null), DMUresults)
+    resultadDMU <- lapply(DMUresults, function(x) x[[1]])
+    resultadSub <- lapply(DMUresults, function(x) x[[2]])
+    return(c(list(resultadDMU), list(resultadSub)))
+  }
+  n_windows <- maxAmountOfWindows - userSelectedVectorSize + 1
+  result <- future_lapply(1:n_windows, processa_janela, future.seed = TRUE)
+  resultadosDMU <- lapply(result, function(x) x[[1]])
+  resultadosSub <- lapply(result, function(x) x[[2]])
+  timeSeriesResultTable <<- c(timeSeriesResultTable, resultadosDMU)
+  timeSeries <<- c(timeSeries, resultadosSub)
+  maxAmountOfIndexes <<- n_windows
+  return(TRUE)
 }
 
-checkAndProcessData <- function(filesDirsTable, inputType, choosenVariables, fractalDivisionMethod, userSelectedVectorSize) {
-  if (is.null(filesDirsTable) || length(filesDirsTable[, 1]) < 1) {
+checkAndProcessData <- function(inputType, choosenVariables, fractalDivisionMethod, userSelectedVectorSize, deamulti_checkbox) {
+  if (is.null(filteredFilesDirsTable) || length(filteredFilesDirsTable) < 1) {
     shinyalert(
       title = "Aviso",
       text = "Selecione um arquivo ou dataset primeiro!",
@@ -578,11 +630,31 @@ checkAndProcessData <- function(filesDirsTable, inputType, choosenVariables, fra
     return(FALSE)
   }
   if (inputType == "tabela") {
-    for (nr in seq_along(filesDirsTable[, 1])) {
-      processTableData(filesDirsTable, nr)
-    }
+    shinyalert(
+      title = "Aviso",
+      text = "Não é possivel gerar dados no modo tabela!",
+      type = "warning",
+      closeOnClickOutside = TRUE,
+      showCancelButton = FALSE,
+      showConfirmButton = TRUE,
+      confirmButtonText = "OK",
+      confirmButtonCol = "darkred",
+    )
+    return(FALSE)
   } else {
-    calculateDMU(filesDirsTable, fractalDivisionMethod, userSelectedVectorSize)
+    if (!calculateDMU(fractalDivisionMethod, userSelectedVectorSize, deamulti_checkbox)) {
+      shinyalert(
+      title = "Aviso",
+      text = "Um erro inesperado aconteceu!",
+      type = "warning",
+      closeOnClickOutside = TRUE,
+      showCancelButton = FALSE,
+      showConfirmButton = TRUE,
+      confirmButtonText = "OK",
+      confirmButtonCol = "darkred",
+    )
+      return(FALSE)
+    }
   }
 
   if (is.null(choosenVariables)) {
@@ -603,13 +675,15 @@ processDEA <- function(input, output) {
   showTab(inputId = "tabs", target = "DEA Table")
   showTab(inputId = "tabs", target = "GRAPHIC DEA")
   combinedTableDea <- data.frame()
+  input_list <- list()
+  output_list <- list()
 
   for (windowIndex in 1:length(timeSeriesResultTable)) {
     resultTimeWindow <- timeSeriesResultTable[[windowIndex]]
     resultTimeWindowDataFrame <- data.frame(matrix(unlist(resultTimeWindow), nrow = length(resultTimeWindow), byrow = TRUE))
     colnames(resultTimeWindowDataFrame) <- tableColumnNames
 
-    if (input$typDMU != "tabela" && !is.null(input$variable)) {
+    if (tipo_dmu != "tabela" && !is.null(input$variable)) {
       FiltereSshowDataFrame <- resultTimeWindowDataFrame[, c("DMU", input$variable)]
       resultTimeWindowDataFrame <- FiltereSshowDataFrame
     }
@@ -647,22 +721,15 @@ processDEA <- function(input, output) {
     } else {
       outputs <- data_dea[, input$idOutputs] # select only input variables values
     }
-
+    input_list[[windowIndex]] <- inputs
+    output_list[[windowIndex]] <- outputs
+  
     if (input$mod == "SCCR") {
       dea <- sdea(inputs, outputs, RTS = "CRS", ORIENTATION = input$ori) # runs super-efficiency input-oriented CCR DEA model
-
-      output$graficoDea <- renderPlot(dea.plot(inputs, outputs, RTS = "CRS", ORIENTATION = input$ori))
-      output$graficoDeafrontier <- renderPlot(dea.plot.frontier(inputs, outputs, RTS = "CRS"))
     } else if (input$mod == "ADD") {
       dea <- sdea(inputs, outputs, RTS = input$mod, ORIENTATION = input$ori)
-
-      output$graficoDea <- renderPlot(dea.plot(inputs, outputs, RTS = input$mod, ORIENTATION = "in-out"))
-      output$graficoDeafrontier <- renderPlot(dea.plot.frontier(inputs, outputs, RTS = input$mod))
     } else {
       dea <- dea(inputs, outputs, RTS = input$mod, ORIENTATION = input$ori, SLACK = TRUE)
-
-      output$graficoDea <- renderPlot(dea.plot(inputs, outputs, RTS = input$mod, ORIENTATION = input$ori))
-      output$graficoDeafrontier <- renderPlot(dea.plot.frontier(inputs, outputs, RTS = input$mod))
     }
 
     listDEA <- data.matrix(dea$eff)
@@ -670,23 +737,41 @@ processDEA <- function(input, output) {
     tableDea <- cbind(DMU = rownames(tableDea), tableDea)
 
     if (input$mod == "SCCR" || input$mod == "ADD") {
-      colnames(tableDea) <- c("DMU", sprintf("Efficiency Ranking Index timeseries %s", windowIndex))
+      colnames(tableDea) <- c("DMU", sprintf("%s", windowIndex))
     } else {
       if (input$ori == "out") {
         tableDea[seq_len(nrow(tableDea)), 2] <- 1 / tableDea[seq_len(nrow(tableDea)), 2]
       }
-      colnames(tableDea) <- c("DMU", sprintf("Efficiency Index timeseries %s", windowIndex))
+      colnames(tableDea) <- c("DMU", sprintf("%s", windowIndex))
     }
 
     rownames(tableDea) <- seq_len(nrow(tableDea))
     tableDea <- arrange(tableDea, tableDea[, 1])
 
+    new_col_name <- sprintf("%s", windowIndex)  # Defina o nome que você quer
+
     if (nrow(combinedTableDea) < 1) {
       combinedTableDea <- tableDea
     } else {
-      combinedTableDea <- cbind(combinedTableDea, tableDea[[2]])
+      combinedTableDea <- cbind(combinedTableDea, setNames(data.frame(tableDea[[2]]), new_col_name))
     }
   }
+  media_input <- Reduce("+", input_list) / length(input_list)
+  media_output <- Reduce("+", output_list) / length(output_list)
+
+  if (input$mod == "SCCR") {
+    output$graficoDea <- renderPlot(dea.plot(media_input, media_output, RTS = "CRS", ORIENTATION = input$ori))
+    output$graficoDeafrontier <- renderPlot(dea.plot.frontier(inputs, outputs, RTS = "CRS"))
+  } else if (input$mod == "ADD") {
+    output$graficoDea <- renderPlot(dea.plot(media_input, media_output, RTS = input$mod, ORIENTATION = "in-out"))
+    output$graficoDeafrontier <- renderPlot(dea.plot.frontier(inputs, outputs, RTS = input$mod))
+  } else {
+    output$graficoDea <- renderPlot(dea.plot(media_input, media_output, RTS = input$mod, ORIENTATION = input$ori))
+    output$graficoDeafrontier <- renderPlot(dea.plot.frontier(inputs, outputs, RTS = input$mod))
+  }
+  
+  combinedTableDea$Média <- rowMeans(combinedTableDea[, -1], na.rm = TRUE)
+  combinedTableDea[, -1] <- round(combinedTableDea[, -1], 3)
 
   output$OutDEA <- renderDT({
     datatable(
@@ -718,7 +803,12 @@ server <- function(input, output, session) {
   observeEvent(input$windowIndex, {
     req(input$windowIndex)
     arquivos_df <- filesDirsTable()
-    createShowTable(input$windowIndex, input$variable, input$typDMU, output, session)
+    createShowTable(input$windowIndex, input$variable, tipo_dmu, output, session)
+  })
+
+  observeEvent(input$typDMU, {
+    req(input$typDMU)
+    tipo_dmu <<- input$typDMU
   })
 
   session$onSessionEnded(function() {
@@ -794,7 +884,7 @@ server <- function(input, output, session) {
     chosen_folder <- reactive(input$folder)
     req(is.list(input$folder))
     datasetDir <- parseDirPath(c(wd = datasetFolder), chosen_folder())
-    files_in_folder <- list.files(path = datasetDir, full.names = TRUE, recursive = TRUE, pattern = "\\.(csv)$")
+    files_in_folder <- list.files(path = datasetDir, full.names = TRUE, recursive = TRUE, pattern = "\\.(txt|xlsx|csv|tsv)$")
     arquivos_df <- data.frame(
       datapath = files_in_folder,
       name = file_path_sans_ext(basename(files_in_folder)),
@@ -802,8 +892,14 @@ server <- function(input, output, session) {
     )
     filesDirsTable(arquivos_df)
     # TODO: Hide window selection slider
-    preprocessData(arquivos_df, input$typDMU)
-    updateSliderInput(session, "windowSize", value = 1, max = maxAmountOfWindows)
+    result <- preprocessData(arquivos_df, tipo_dmu)
+    if (result == 'tabela') {
+      shinyalert(title = "Pronto!", type = "success")
+      enable("windowIndex")
+      updateSliderInput(session, "windowIndex", value = 1, max=maxAmountOfIndexes)
+      createShowTable(1, input$variable, tipo_dmu, output, session)
+    }
+    updateSliderInput(session, "windowSize", value = 60, max = maxAmountOfWindows)
     enable("windowSize")
   })
 
@@ -815,8 +911,14 @@ server <- function(input, output, session) {
     arquivo_nome <- tools::file_path_sans_ext(basename(input$idArquivo$name))
     arquivos_df <- data.frame(datapath = arquivo_caminho, name = arquivo_nome, stringsAsFactors = FALSE)
     filesDirsTable(arquivos_df)
-    preprocessData(arquivos_df, input$typDMU)
-    updateSliderInput(session, "windowSize", value = 1, max = maxAmountOfWindows)
+    result <- preprocessData(arquivos_df, tipo_dmu)
+    if (result == 'tabela') {
+      shinyalert(title = "Pronto!", type = "success")
+      enable("windowIndex")
+      updateSliderInput(session, "windowIndex", value = 1, max=maxAmountOfIndexes)
+      createShowTable(1, input$variable, tipo_dmu, output, session)
+    }
+    updateSliderInput(session, "windowSize", value = 60, max = maxAmountOfWindows)
     enable("windowSize")
   })
 
@@ -835,12 +937,14 @@ server <- function(input, output, session) {
       tryCatch(
         withCallingHandlers(
           {
-            checkStatus <- checkAndProcessData(filesDirsTable, input$typDMU, input$variable, input$sep, input$windowSize)
+            checkStatus <- checkAndProcessData(tipo_dmu, input$variable, input$sep, input$windowSize, input$deamulti_checkbox)
             if (!checkStatus) {
               return()
             }
-            updateSliderInput(session, "windowIndex", max = maxAmountOfIndexes)
-            enable("windowIndex")
+            if (tipo_dmu != 'tabela') {
+              updateSliderInput(session, "windowIndex", max = maxAmountOfIndexes)
+              enable("windowIndex")
+            }
           },
           warning = function(msg) {
             shinyalert(
@@ -882,7 +986,7 @@ server <- function(input, output, session) {
       shinyalert(title = "Pronto!", type = "success")
 
       updateSliderInput(session, "windowIndex", value = 1)
-      createShowTable(1, input$variable, input$typDMU, output, session)
+      createShowTable(1, input$variable, tipo_dmu, output, session)
     }
 
     # check if there has already data
@@ -931,7 +1035,7 @@ server <- function(input, output, session) {
       hideTab(inputId = "tabs", target = "DEA Table")
       hideTab(inputId = "tabs", target = "GRAPHIC DEA")
     }
-    createShowTable(input$windowIndex, input$variable, input$typDMU, output, session)
+    createShowTable(input$windowIndex, input$variable, tipo_dmu, output, session)
   })
 
   observeEvent(input$idDeleteRows,
