@@ -22,6 +22,7 @@ library(htmltools)
 library(markdown)
 library(stringi)
 library(future.apply)
+library(abind)
 
 # Constants
 datasetFolder <- "./datasets/"
@@ -307,6 +308,7 @@ maxAmountOfIndexes <<- 0
 vectors <<- list()
 tipo_dmu <<- 'apache'
 filteredFilesDirsTable <<- list()
+selectedWindowSize <<- 0
 
 timeSeriesResultTable <<- list()
 showDataFrame <<- data.frame()
@@ -356,7 +358,7 @@ editTable <- function(input, output) {
 }
 
 renderShowTable <- function(output, session, WindowIndex) {
-  if (nrow(showDataFrame) > 0) {
+  if (nrow(showDataFrame) > 1) {
     show("oculDEA")
     show("oculButton")
     updateSelectInput(session, "idInputs",
@@ -429,19 +431,23 @@ processTableData <- function(filesDirsTable, nr, ignoreErrors) {
 }
 
 processIperfData <- function(file) {
-  arquivo <- read.csv(file, header = FALSE, sep = "", skip = 6)
+  arquivo <- read.csv(file, header = FALSE, sep = "", skip = 3)
   if (ncol(arquivo) < 8) {
     return(NULL)
   }
-  df <- data.frame(arquivo[, 8], arquivo[, 7])
-  print(df)
-  colnames(df) <- c("Um", "Dois")
-  new_df <- df[!grepl("K", df$Um), ]
-  new_df2 <- df[!grepl("K", df$Dois), ]
-  colnames(new_df) <- c("DMU", "EX")
-  colnames(new_df2) <- c("EX", "DMU")
-  df_vetor <- rbind(new_df, new_df2)
-  return(as.numeric(as.character(df_vetor$DMU)))
+  print(arquivo)
+  bitrate_column <- arquivo[, 7]
+  print(bitrate_column)
+  convertToNumeric <- function(x) {
+    x <- as.character(x)  
+    x <- gsub("K", "e3", x)  
+    x <- gsub("M", "e6", x) 
+    as.numeric(x)
+  }
+  bitrate_numeric <- convertToNumeric(bitrate_column)
+  bitrate_numeric <- bitrate_numeric[!is.na(bitrate_numeric)]
+  print(bitrate_numeric)
+  return(bitrate_numeric)
 }
 
 processApacheData <- function(file) {
@@ -454,11 +460,17 @@ processApacheData <- function(file) {
 }
 
 processOtherData <- function(file) {
-  arquivo <- read.table(file)
-  if (is.null(arquivo)) {
+  resultado <- tryCatch({
+    arquivo <- read.table(file)
+    return(arquivo)
+  }, error = function(e) {
+    return(NULL)
+  })
+  if (is.null(resultado)) {
     return(NULL)
   } else {
-    return(c(as.numeric(unlist(arquivo))))
+    print(resultado)
+    return(c(as.numeric(unlist(resultado))))
   }
 }
 
@@ -523,11 +535,19 @@ preprocessData <- function(filesDirsTable, inputType) {
   if (is.null(vectors)) {
     return(NULL)
   }
+  print(biggestVector)
+  print(vectors)
+  if (biggestVector < 60) return(NULL)
   maxAmountOfWindows <<- biggestVector
 }
 
 calculateDMU <- function(fractalDivisionMethod, userSelectedVectorSize, deamulti_checkbox) {
-  timeSeriesResultTable <<- list()
+  is_list_of_nuls <- function(lst) {
+    is.list(lst) && all(sapply(lst, is.null))
+  }
+  if (is_list_of_nuls(vectors)) {
+    return('lista_vazia')
+  }
   plan(multisession)
   processa_subvetores <- function(nr, windowIndex) {
     name <- tools::file_path_sans_ext(basename(filteredFilesDirsTable[[nr]]))
@@ -609,9 +629,35 @@ calculateDMU <- function(fractalDivisionMethod, userSelectedVectorSize, deamulti
   result <- future_lapply(1:n_windows, processa_janela, future.seed = TRUE)
   resultadosDMU <- lapply(result, function(x) x[[1]])
   resultadosSub <- lapply(result, function(x) x[[2]])
-  timeSeriesResultTable <<- c(timeSeriesResultTable, resultadosDMU)
+
+  soma_listas <- function(lista1, lista2) {
+    newList <- list()
+    biggestList <- NULL
+
+    if (length(lista1) > length(lista2)) biggestList <- lista1
+    else biggestList <- lista2
+
+    for (winIndex in seq_along(biggestList)) {
+      if (winIndex > length(lista1) || winIndex > length(lista2)) {
+        newList[[winIndex]] <- biggestList[[winIndex]]
+        next
+      }
+      newList[[winIndex]] <- c(lista1[[winIndex]], lista2[[winIndex]])
+    }
+    return(newList)
+  }
+
+  if (length(timeSeriesResultTable) == 0) {
+    timeSeriesResultTable <<- c(timeSeriesResultTable, resultadosDMU)
+  } else {
+    # timeSeriesResultTable <<- mapply(c, timeSeriesResultTable, resultadosDMU, SIMPLIFY = FALSE)
+    # timeSeriesResultTable <<- abind(timeSeriesResultTable, resultadosDMU, along = 2)
+    print(resultadosDMU)
+    timeSeriesResultTable <<- soma_listas(timeSeriesResultTable, resultadosDMU)
+    print(timeSeriesResultTable)
+  }
   timeSeries <<- c(timeSeries, resultadosSub)
-  maxAmountOfIndexes <<- n_windows
+  maxAmountOfIndexes <<- length(timeSeriesResultTable)
   return(TRUE)
 }
 
@@ -642,17 +688,31 @@ checkAndProcessData <- function(inputType, choosenVariables, fractalDivisionMeth
     )
     return(FALSE)
   } else {
-    if (!calculateDMU(fractalDivisionMethod, userSelectedVectorSize, deamulti_checkbox)) {
+    result <- calculateDMU(fractalDivisionMethod, userSelectedVectorSize, deamulti_checkbox)
+    if (result == 'lista_vazia') {
       shinyalert(
-      title = "Aviso",
-      text = "Um erro inesperado aconteceu!",
-      type = "warning",
-      closeOnClickOutside = TRUE,
-      showCancelButton = FALSE,
-      showConfirmButton = TRUE,
-      confirmButtonText = "OK",
-      confirmButtonCol = "darkred",
-    )
+        title = "Aviso",
+        text = "O tipo de arquivo utilizado é invalido!",
+        type = "warning",
+        closeOnClickOutside = TRUE,
+        showCancelButton = FALSE,
+        showConfirmButton = TRUE,
+        confirmButtonText = "OK",
+        confirmButtonCol = "darkred",
+      )
+      return(FALSE)
+    }
+    if (!result) {
+      shinyalert(
+        title = "Aviso",
+        text = "Um erro inesperado aconteceu!",
+        type = "warning",
+        closeOnClickOutside = TRUE,
+        showCancelButton = FALSE,
+        showConfirmButton = TRUE,
+        confirmButtonText = "OK",
+        confirmButtonCol = "darkred",
+      )
       return(FALSE)
     }
   }
@@ -791,6 +851,7 @@ server <- function(input, output, session) {
   updateSliderInput(session, "windowSize", value = 1)
   disable("windowSize")
   disable("windowIndex")
+  disable("idBotao")
   disable("tbl")
   output$tbl <- renderDT(data.frame(matrix(ncol = 0, nrow = 0)))
 
@@ -809,6 +870,13 @@ server <- function(input, output, session) {
   observeEvent(input$typDMU, {
     req(input$typDMU)
     tipo_dmu <<- input$typDMU
+    disable("idBotao")
+    disable("windowSize")
+  })
+
+  observeEvent(input$windowSize, {
+    req(input$windowSize)
+    selectedWindowSize <<- input$windowSize
   })
 
   session$onSessionEnded(function() {
@@ -817,6 +885,15 @@ server <- function(input, output, session) {
     fooTableDEA <<- data.frame()
     fooDash <<- data.frame()
     timeSeries <<- list()
+    maxVectorSize <<- 0
+    biggestVector <<- 0
+    maxAmountOfWindows <<- 0
+    maxAmountOfIndexes <<- 0
+    vectors <<- list()
+    tipo_dmu <<- 'apache'
+    filteredFilesDirsTable <<- list()
+    timeSeriesResultTable <<- list()
+    showDataFrame <<- data.frame()
     hideTab(inputId = "tabs", target = "DMU Analysis")
     click("idAtualizar")
   })
@@ -893,6 +970,20 @@ server <- function(input, output, session) {
     filesDirsTable(arquivos_df)
     # TODO: Hide window selection slider
     result <- preprocessData(arquivos_df, tipo_dmu)
+    if(is.null(result)) {
+      shinyalert(
+        title = "Aviso",
+        text = "O tamanho da série temporal tem que ser pelo menos 60!",
+        type = "warning",
+        closeOnClickOutside = TRUE,
+        showCancelButton = FALSE,
+        showConfirmButton = TRUE,
+        confirmButtonText = "OK",
+        confirmButtonCol = "darkred",
+      )
+      disable("windowSize")
+      return()
+    }
     if (result == 'tabela') {
       shinyalert(title = "Pronto!", type = "success")
       enable("windowIndex")
@@ -901,6 +992,7 @@ server <- function(input, output, session) {
     }
     updateSliderInput(session, "windowSize", value = 60, max = maxAmountOfWindows)
     enable("windowSize")
+    enable("idBotao")
   })
 
   # loads the file when the user selects it
@@ -912,6 +1004,7 @@ server <- function(input, output, session) {
     arquivos_df <- data.frame(datapath = arquivo_caminho, name = arquivo_nome, stringsAsFactors = FALSE)
     filesDirsTable(arquivos_df)
     result <- preprocessData(arquivos_df, tipo_dmu)
+    if(is.null(result)) return()
     if (result == 'tabela') {
       shinyalert(title = "Pronto!", type = "success")
       enable("windowIndex")
@@ -920,11 +1013,13 @@ server <- function(input, output, session) {
     }
     updateSliderInput(session, "windowSize", value = 60, max = maxAmountOfWindows)
     enable("windowSize")
+    enable("idBotao")
   })
 
   observeEvent(input$idBotao, {
     hide("oculDEA")
     hide("oculButton")
+    disable("windowSize")
     arquivos_df <- filesDirsTable()
     processEvent <- function(filesDirsTable) {
       output$tbl <- renderDT(
@@ -990,7 +1085,7 @@ server <- function(input, output, session) {
     }
 
     # check if there has already data
-    if (nrow(fooTable) >= 1) {
+    if (nrow(showDataFrame) >= 1) {
       shinyalert(
         title = "Deseja criar uma nova Tabela?",
         text = "Caso não, aumentaremos o numero de linhas da tabela atual",
@@ -1008,7 +1103,9 @@ server <- function(input, output, session) {
             colnames(fooTable) <<- tableColumnNames
             fooTableDEA <<- data.frame()
             fooDash <<- data.frame()
+            showDataFrame <<- data.frame()
             timeSeries <<- list()
+            timeSeriesResultTable <<- list()
             hideTab(inputId = "tabs", target = "DMU Analysis")
             click("idAtualizar")
             # remove everything from filesDirTable before oldFileIndex
@@ -1018,7 +1115,27 @@ server <- function(input, output, session) {
               filesDirsTable(filesTable[(oldIndex + 1):nrow(filesTable), ])
             } else {
               filesDirsTable(data.frame(datapath = character(), name = character(), stringsAsFactors = FALSE))
+              print('limpei')
             }
+          } else {
+            nwinSize <- maxAmountOfWindows - selectedWindowSize + 1
+            print(nwinSize)
+            print(length(timeSeriesResultTable))
+            if (length(timeSeriesResultTable) > 0 && nwinSize != length(timeSeriesResultTable)) {
+              shinyalert(
+                title = "Aviso",
+                text = "O tamanho da janela de tempo tem que ser o mesmo dos dados anteriores!",
+                type = "warning",
+                closeOnClickOutside = TRUE,
+                showCancelButton = FALSE,
+                showConfirmButton = TRUE,
+                confirmButtonText = "OK",
+                confirmButtonCol = "darkred",
+              )
+              return()
+            }
+            filesDirsTable(data.frame(datapath = character(), name = character(), stringsAsFactors = FALSE))
+            print('limpei2')
           }
           processEvent(filesDirsTable())
         }
