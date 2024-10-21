@@ -1,2 +1,2 @@
 #!/bin/bash
-Rscript Date.R
+Rscript app.R

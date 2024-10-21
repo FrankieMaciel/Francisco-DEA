@@ -1,2 +1,2 @@
 @echo off
-Rscript Date.R
+Rscript app.R
